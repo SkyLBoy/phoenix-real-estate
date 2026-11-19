@@ -127,3 +127,12 @@ confirmar**. Cuando cambia a **En contrato** o **Ya no disponible**, su ficha
 sigue abriendo con el estado y acceso a otras propiedades. **Volver a
 disponible** confirma la fecha y devuelve la ficha al catálogo con el mismo
 enlace.
+
+## Corregir el precio de una ficha publicada
+
+Ejecuta `supabase/migrations/20261119000800_revision_textos_por_precio.sql`
+después de las migraciones anteriores. En `/admin`, abre **Corregir precio**
+en una ficha publicada. El catálogo y los avisos preparados después usan el
+importe actualizado, con el mismo enlace de ficha. Los cuatro textos conservan
+su contenido y vuelven a revisión cuando cambia el precio. Aprueba de nuevo
+cada texto antes de copiarlo como final.

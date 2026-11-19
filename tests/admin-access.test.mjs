@@ -161,7 +161,9 @@ globalThis.fetch = async (input, init) => {
         const id = url.searchParams.get('id').slice(3);
         const existing = properties.get(id);
         const filtros = [...url.searchParams].filter(([campo]) => !['id', 'select', 'publicada_en'].includes(campo));
-        if (!existing || (url.searchParams.has('publicada_en') && existing.publicada_en !== null)
+        const publicacion = url.searchParams.get('publicada_en');
+        if (!existing || (publicacion === 'is.null' && existing.publicada_en !== null)
+          || (publicacion === 'not.is.null' && existing.publicada_en == null)
           || filtros.some(([campo, filtro]) => filtro === 'is.null' ? existing[campo] != null
             : String(existing[campo]) !== filtro.slice(3))) return Response.json([]);
 
@@ -577,7 +579,7 @@ test('la vigencia vence a las 72 horas sin ocultar propiedades disponibles', asy
 test('confirmar y reactivar actualizan la fecha sin cambiar el identificador de la ficha', async () => {
   const id = 'casa-disponibilidad';
   const publicada = '2026-11-15T00:00:00.000Z';
-  properties.set(id, { id, estado: 'disponible', publicada_en: publicada, ultima_confirmacion: publicada });
+  properties.set(id, { id, estado: 'disponible', ciudad_zona: 'Tempe', precio: 250000, publicada_en: publicada, ultima_confirmacion: publicada });
 
   const cambiar = (estado) => request(PATCH, 'PATCH', { token: seller, body: { id, estado } });
 
@@ -641,4 +643,38 @@ test('el aviso trae fichas vigentes de días anteriores y comparte solo un enlac
     properties.clear();
     for (const [id, ficha] of respaldo) properties.set(id, ficha);
   }
+});
+
+
+test('corregir el precio actualiza una ficha publicada y los avisos posteriores', async () => {
+  const { cargarFichasDelAviso, prepararAvisoWhatsApp } = await import('../lib/aviso-whatsapp.ts');
+  const id = 'casa-correccion-precio';
+  const base = {
+    id, ciudad_zona: 'Scottsdale 85251', publicada_en: '2026-11-18T00:00:00Z',
+    ultima_confirmacion: '2026-11-19T12:00:00Z', estado: 'disponible',
+    precio: 200000, script_fb_es: 'Edición del vendedor',
+  };
+  properties.set(id, base);
+  properties.set('borrador-precio', { ...base, publicada_en: null });
+  const cambiar = (importe, anterior = 200000, ficha = id) => request(PATCH, 'PATCH', {
+    token: seller,
+    body: { accion: 'corregir_precio', id: ficha, precio: importe, precio_anterior: anterior },
+  });
+
+  assert.equal((await cambiar(0)).status, 400);
+  assert.equal((await cambiar(200000.123)).status, 400);
+  assert.equal((await cambiar(220000, 200000, 'borrador-precio')).status, 409);
+
+  const respuesta = await cambiar(215500.25);
+  assert.equal(respuesta.status, 200);
+  assert.equal((await respuesta.json()).ficha.precio, 215500.25);
+  assert.equal((await cambiar(220000)).status, 409);
+  assert.equal(properties.get(id).id, id);
+  assert.equal(properties.get(id).publicada_en, base.publicada_en);
+  assert.equal(properties.get(id).script_fb_es, base.script_fb_es);
+
+  const fichas = await cargarFichasDelAviso();
+  const aviso = prepararAvisoWhatsApp(fichas, 'https://catalogo.test', Date.parse('2026-11-19T19:00:00Z'));
+  assert.ok(aviso.includes('Scottsdale 85251 — $215,500.25 USD'));
+  assert.ok(!aviso.includes('Scottsdale 85251 — $200,000 USD'));
 });

@@ -36,6 +36,25 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: 'Identifica la ficha' }, { status: 400 });
   }
 
+  if (body.accion === 'corregir_precio') {
+    const { precio, precio_anterior } = body;
+    if (typeof precio !== 'number' || !Number.isFinite(precio) || precio <= 0
+      || !/^\d+(?:\.\d{1,2})?$/.test(String(precio))
+      || typeof precio_anterior !== 'number' || !Number.isFinite(precio_anterior)) {
+      return NextResponse.json({ error: 'Indica un precio positivo con hasta dos decimales' }, { status: 400 });
+    }
+
+    const { data, error } = await supabaseAdmin.from('propiedades')
+      .update({ precio }).eq('id', id).eq('precio', precio_anterior).not('publicada_en', 'is', null)
+      .select('precio,textos_version,script_fb_es_aprobado,script_fb_en_aprobado,script_wa_vip_aprobado,script_filtro_curiosos_aprobado')
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: 'No se pudo guardar el precio' }, { status: 500 });
+    if (!data) {
+      return NextResponse.json({ error: 'La ficha debe estar publicada y conservar el precio que viste. Recarga el inventario.' }, { status: 409 });
+    }
+    return NextResponse.json({ ficha: data }, { headers: { 'Cache-Control': 'private, no-store' } });
+  }
+
   if (body.accion === 'guardar_borrador' || body.accion === 'publicar') {
     let cambios;
     const publicar = body.accion === 'publicar';

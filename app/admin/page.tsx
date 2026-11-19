@@ -7,6 +7,7 @@ import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
 import { etiquetaDisponibilidad, type EstadoDisponibilidad } from '@/lib/disponibilidad';
 import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import type { TextosFicha } from '@/lib/textos-propiedad';
+import { CorregirPrecio } from './corregir-precio';
 import { AvisoWhatsApp, CopiarEnlaceFicha } from './aviso-whatsapp';
 import { TextosDeFicha } from './textos-ficha';
 import { DescargarFotoDrive, SelectorFotosDrive, VistaFotoDrive } from './fotos-drive';
@@ -723,6 +724,22 @@ function Inventario({
                       Publicada · Ver ficha
                     </Link>
                     <CopiarEnlaceFicha ruta={rutaFicha} />
+                    {prop.precio != null && (
+                      <CorregirPrecio precio={prop.precio} guardar={async (precio) => {
+                        const { ficha } = await solicitar<{ ficha: Partial<TextosFicha> & { precio: number } }>(
+                          userId, '/api/admin/propiedades', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              id: prop.id, accion: 'corregir_precio', precio, precio_anterior: prop.precio,
+                            }),
+                          },
+                        );
+                        setPropiedades((actuales) => actuales?.map((actual) => actual.id === prop.id
+                          ? { ...actual, ...ficha } : actual) ?? null);
+                        setRevisionAviso((revision) => revision + 1);
+                      }} />
+                    )}
                     <p aria-live="polite" className={etiqueta === 'Por confirmar' ? 'font-semibold text-amber-300' : 'font-medium'}>
                       {actualizando ? 'Actualizando disponibilidad…' : etiqueta}
                     </p>
