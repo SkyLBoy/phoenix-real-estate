@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { esEstadoDisponibilidad } from '../../../../lib/disponibilidad';
 import { ErrorDrive, fotoParaPanel, identificadorDrive } from '../../drive';
 import { camposFicha, urlPublica } from './campos';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
@@ -80,20 +81,21 @@ export async function PATCH(req: Request) {
   }
 
   const { estado } = body;
-  if (!['disponible', 'en_contrato', 'vendida'].includes(estado)) {
+  if (body.accion != null || !esEstadoDisponibilidad(estado)) {
     return NextResponse.json({ error: 'Estado inválido' }, { status: 400 });
   }
 
-  const { error } = await supabaseAdmin
-    .from('propiedades')
-    .update({ estado })
-    .eq('id', id);
+  const cambios = estado === 'disponible'
+    ? { estado, ultima_confirmacion: new Date().toISOString() }
+    : { estado };
+  const { data, error } = await supabaseAdmin.from('propiedades')
+    .update(cambios).eq('id', id)
+    .select('id,estado,ultima_confirmacion').maybeSingle();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: 'La ficha ya no existe' }, { status: 404 });
+  return NextResponse.json({ ok: true, disponibilidad: data });
 
-  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: Request) {

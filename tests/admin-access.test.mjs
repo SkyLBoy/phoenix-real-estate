@@ -548,3 +548,48 @@ test('la generación rechaza una posible dirección escrita como zona pública',
   assert.equal(respuesta.status, 400);
   assert.equal(entradasGemini.length, start);
 });
+
+test('la vigencia vence a las 72 horas sin ocultar propiedades disponibles', async () => {
+  const { etiquetaDisponibilidad } = await import('../lib/disponibilidad.ts');
+  const confirmacion = '2026-11-16T19:00:00.000Z';
+  const limite = Date.parse('2026-11-19T19:00:00.000Z');
+  assert.equal(etiquetaDisponibilidad('disponible', confirmacion, limite - 1), 'Disponible');
+  assert.equal(etiquetaDisponibilidad('disponible', confirmacion, limite), 'Por confirmar');
+  assert.equal(etiquetaDisponibilidad('disponible', null, limite), 'Por confirmar');
+  assert.equal(etiquetaDisponibilidad('en_contrato', confirmacion, limite), 'En contrato');
+  assert.equal(etiquetaDisponibilidad('vendida', confirmacion, limite), 'Ya no disponible');
+});
+
+test('confirmar y reactivar actualizan la fecha sin cambiar el identificador de la ficha', async () => {
+  const id = 'casa-disponibilidad';
+  const publicada = '2026-11-15T00:00:00.000Z';
+  properties.set(id, { id, estado: 'disponible', publicada_en: publicada, ultima_confirmacion: publicada });
+
+  const cambiar = (estado) => request(PATCH, 'PATCH', { token: seller, body: { id, estado } });
+
+  assert.equal((await cambiar('por_confirmar')).status, 400);
+  const inicio = Date.now();
+  const confirmar = await cambiar('disponible');
+  assert.equal(confirmar.status, 200);
+  const { disponibilidad: confirmada } = await confirmar.json();
+  assert.equal(confirmada.id, id);
+  assert.ok(Date.parse(confirmada.ultima_confirmacion) >= inicio);
+
+  const contrato = await cambiar('en_contrato');
+  assert.equal((await contrato.json()).disponibilidad.estado, 'en_contrato');
+  const retirada = await cambiar('vendida');
+  assert.deepEqual((await retirada.json()).disponibilidad, {
+    id, estado: 'vendida', ultima_confirmacion: confirmada.ultima_confirmacion,
+  });
+
+  const reactivacion = await cambiar('disponible');
+  assert.equal(reactivacion.status, 200);
+  const reactivada = (await reactivacion.json()).disponibilidad;
+  assert.equal(reactivada.id, id);
+  assert.ok(Date.parse(reactivada.ultima_confirmacion) >= Date.parse(confirmada.ultima_confirmacion));
+  assert.equal(properties.get(id).publicada_en, publicada);
+
+  assert.equal((await request(PATCH, 'PATCH', {
+    token: seller, body: { id: 'ficha-que-no-existe', estado: 'disponible' },
+  })).status, 404);
+});

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { etiquetaDisponibilidad } from '@/lib/disponibilidad';
+import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import { supabase } from '@/lib/supabase';
 import { CAMPOS_PUBLICOS, enlacePortada, enlaceWhatsApp, type PropiedadPublica } from '@/lib/propiedades-publicas';
 import {
@@ -16,6 +18,7 @@ import {
 } from 'lucide-react';
 
 export default function CatalogoPublico() {
+  const ahora = useRelojDisponibilidad();
   const [propiedades, setPropiedades] = useState<PropiedadPublica[]>([]);
   const [filtroZona, setFiltroZona] = useState('');
   const [cargando, setCargando] = useState(true);
@@ -32,7 +35,7 @@ export default function CatalogoPublico() {
       const { data } = await supabase
         .from('propiedades_publicas')
         .select(CAMPOS_PUBLICOS)
-        .neq('estado', 'vendida')
+        .eq('estado', 'disponible')
         .order('created_at', { ascending: false });
 
       if (data) setPropiedades(data);
@@ -104,6 +107,7 @@ export default function CatalogoPublico() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filtradas.map((prop) => {
               const portada = enlacePortada(prop);
+              const porConfirmar = etiquetaDisponibilidad(prop.estado, prop.ultima_confirmacion, ahora) === 'Por confirmar';
               return (
                 <article
                   key={prop.id}
@@ -123,9 +127,9 @@ export default function CatalogoPublico() {
                           Fotos disponibles en carpeta Drive
                         </span>
                       )}
-                      {prop.estado === 'en_contrato' && (
+                      {porConfirmar && (
                         <span className="absolute top-3 right-3 bg-amber-500 text-zinc-950 text-xs font-bold px-2.5 py-1 rounded-full">
-                          Bajo Contrato
+                          Por confirmar
                         </span>
                       )}
                     </div>

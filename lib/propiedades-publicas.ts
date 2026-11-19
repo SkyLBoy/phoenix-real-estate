@@ -1,3 +1,5 @@
+import type { EstadoDisponibilidad } from './disponibilidad';
+
 export interface PropiedadPublica {
   id: string;
   ciudad_zona: string;
@@ -11,11 +13,12 @@ export interface PropiedadPublica {
   drive_url: string | null;
   imagen_portada: string | null;
   tiene_portada_drive: boolean;
-  estado: 'disponible' | 'en_contrato' | 'vendida';
+  estado: EstadoDisponibilidad;
+  ultima_confirmacion: string | null;
 }
 
 export const CAMPOS_PUBLICOS =
-  'id, ciudad_zona, precio, arv, beds, baths, sqft, lot_size, year_built, drive_url, imagen_portada, estado, tiene_portada_drive';
+  'id, ciudad_zona, precio, arv, beds, baths, sqft, lot_size, year_built, drive_url, imagen_portada, estado, tiene_portada_drive, ultima_confirmacion';
 
 export function enlaceWhatsApp(prop: PropiedadPublica) {
   const numero = process.env.NEXT_PUBLIC_WHATSAPP_ASESOR || '16025550199';

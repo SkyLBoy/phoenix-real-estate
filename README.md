@@ -113,3 +113,17 @@ manualmente. Si vuelves a generar, el panel pide confirmar el reemplazo.
 Se reutiliza `GEMINI_API_KEY`. Si falta la clave o Gemini no devuelve cuatro
 textos válidos, se usan plantillas con las condiciones confirmadas. Ambos
 resultados requieren revisión y aprobación.
+
+## Actualizar disponibilidad
+
+Ejecuta `supabase/migrations/20261119000600_disponibilidad_publica.sql`
+después de las migraciones anteriores. Añade la fecha de última confirmación
+a la vista pública y conserva los estados actuales.
+
+Desde el inventario publicado en `/admin`, usa **Confirmar disponible**,
+**Marcar en contrato** o **Marcar ya no disponible**. Tras 72 horas sin
+confirmación, una propiedad disponible permanece visible como **Por
+confirmar**. Cuando cambia a **En contrato** o **Ya no disponible**, su ficha
+sigue abriendo con el estado y acceso a otras propiedades. **Volver a
+disponible** confirma la fecha y devuelve la ficha al catálogo con el mismo
+enlace.

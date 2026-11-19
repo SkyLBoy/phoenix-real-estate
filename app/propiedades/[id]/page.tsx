@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import { CAMPOS_PUBLICOS, enlacePortada, enlaceWhatsApp } from '@/lib/propiedades-publicas';
+import { EtiquetaDisponibilidad } from './etiqueta-disponibilidad';
 import { supabase } from '@/lib/supabase';
 
 async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
@@ -18,13 +19,20 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100">
       <article className="mx-auto max-w-xl space-y-5">
-        <Link href="/" className="text-sm text-amber-300">Ver catálogo</Link>
+        <Link href="/" className="text-sm text-amber-300">Ver casas disponibles</Link>
         <h1 className="text-3xl font-bold">{prop.ciudad_zona}</h1>
-        {prop.estado === 'vendida' ? (
-          <p>Esta propiedad ya no está disponible.</p>
+        <EtiquetaDisponibilidad estado={prop.estado} ultimaConfirmacion={prop.ultima_confirmacion} />
+        {prop.estado !== 'disponible' ? (
+          <div className="space-y-3">
+            <p>{prop.estado === 'en_contrato'
+              ? 'Hay un trato en curso para esta propiedad.'
+              : 'Esta propiedad salió del inventario.'}</p>
+            <Link href="/" className="inline-block rounded-lg bg-amber-400 px-4 py-2 font-semibold text-zinc-950">
+              Explorar otras propiedades
+            </Link>
+          </div>
         ) : (
           <>
-            {prop.estado === 'en_contrato' && <p className="text-amber-300">En contrato</p>}
             {/* Las portadas se proporcionan mediante URL de origen variable. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={enlacePortada(prop) ?? undefined} alt={`Portada de propiedad en ${prop.ciudad_zona}`}

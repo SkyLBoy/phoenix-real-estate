@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@supabase/supabase-js';
 import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
+import { etiquetaDisponibilidad, type EstadoDisponibilidad } from '@/lib/disponibilidad';
+import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import type { TextosFicha } from '@/lib/textos-propiedad';
 import { TextosDeFicha } from './textos-ficha';
 import { DescargarFotoDrive, SelectorFotosDrive, VistaFotoDrive } from './fotos-drive';
@@ -34,7 +36,8 @@ interface Propiedad extends TextosFicha {
   year_built: number | null;
   notas_extra: string | null;
   publicada_en: string | null;
-  estado: 'disponible' | 'en_contrato' | 'vendida';
+  estado: EstadoDisponibilidad;
+  ultima_confirmacion: string | null;
 }
 
 async function respuestaPrivada(userId: string, url: string, options: RequestInit = {}) {
@@ -181,6 +184,8 @@ function Inventario({
   saliendo: boolean;
   errorSesion: string;
 }) {
+  const ahora = useRelojDisponibilidad();
+  const [cambiosDisponibilidad, setCambiosDisponibilidad] = useState<Set<string>>(() => new Set());
   const [propiedades, setPropiedades] = useState<Propiedad[] | null>(null);
   const [accesoDenegado, setAccesoDenegado] = useState(false);
   const [errorOperacion, setErrorOperacion] = useState('');
@@ -357,17 +362,27 @@ function Inventario({
     }
   };
 
-  const cambiarEstado = async (id: string, estado: string) => {
+  const cambiarEstado = async (id: string, estado: EstadoDisponibilidad) => {
     setErrorOperacion('');
+    setCambiosDisponibilidad((actuales) => new Set(actuales).add(id));
     try {
-      await solicitar(userId, '/api/admin/propiedades', {
+      const { disponibilidad } = await solicitar<{
+        disponibilidad: Pick<Propiedad, 'estado' | 'ultima_confirmacion'>;
+      }>(userId, '/api/admin/propiedades', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, estado }),
       });
-      setIntentoCarga((intento) => intento + 1);
+      setPropiedades((actuales) => actuales?.map((prop) => prop.id === id
+        ? { ...prop, ...disponibilidad } : prop) ?? null);
     } catch (error) {
       mostrarError(error, 'No se pudo cambiar el estado');
+    } finally {
+      setCambiosDisponibilidad((actuales) => {
+        const pendientes = new Set(actuales);
+        pendientes.delete(id);
+        return pendientes;
+      });
     }
   };
 
@@ -656,6 +671,8 @@ function Inventario({
           {propiedades.map((prop) => {
             const fotoPortada = prop.fotos_drive?.find(({ id }) => id === prop.portada_drive_id);
             const tienePortada = Boolean(fotoPortada || prop.imagen_portada);
+            const etiqueta = etiquetaDisponibilidad(prop.estado, prop.ultima_confirmacion, ahora);
+            const actualizando = cambiosDisponibilidad.has(prop.id);
             return (
               <div
                 key={prop.id}
@@ -682,15 +699,6 @@ function Inventario({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <select
-                      value={prop.estado}
-                      onChange={(e) => cambiarEstado(prop.id, e.target.value)}
-                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs"
-                    >
-                      <option value="disponible">Disponible</option>
-                      <option value="en_contrato">En Contrato</option>
-                      <option value="vendida">Vendida</option>
-                    </select>
                     <button
                       onClick={() => eliminarPropiedad(prop.id)}
                       className="p-2 text-zinc-500 hover:text-red-400 cursor-pointer"
@@ -702,9 +710,33 @@ function Inventario({
                 </div>
 
                 {prop.publicada_en ? (
-                  <Link href={`/propiedades/${prop.id}`} className="text-sm text-amber-300">
-                    Publicada · Ver ficha
-                  </Link>
+                  <div className="space-y-3 text-sm">
+                    <Link href={`/propiedades/${prop.id}`} className="text-amber-300">
+                      Publicada · Ver ficha
+                    </Link>
+                    <p aria-live="polite" className={etiqueta === 'Por confirmar' ? 'font-semibold text-amber-300' : 'font-medium'}>
+                      {actualizando ? 'Actualizando disponibilidad…' : etiqueta}
+                    </p>
+                    {etiqueta === 'Por confirmar' && (
+                      <p className="text-zinc-400">Verifica que la propiedad siga disponible.</p>
+                    )}
+                    <div role="group" aria-label="Actualizar disponibilidad"
+                      className="flex flex-wrap gap-2 [&>button]:min-h-11 [&>button]:rounded-lg [&>button]:bg-zinc-800 [&>button]:px-3 [&>button:disabled]:opacity-50">
+                      <button type="button" disabled={actualizando} onClick={() => cambiarEstado(prop.id, 'disponible')}>
+                        {prop.estado === 'disponible' ? 'Confirmar disponible' : 'Volver a disponible'}
+                      </button>
+                      {prop.estado === 'disponible' && (
+                        <button type="button" disabled={actualizando} onClick={() => cambiarEstado(prop.id, 'en_contrato')}>
+                          Marcar en contrato
+                        </button>
+                      )}
+                      {prop.estado !== 'vendida' && (
+                        <button type="button" disabled={actualizando} onClick={() => cambiarEstado(prop.id, 'vendida')}>
+                          Marcar ya no disponible
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-3 text-sm">
                     <p className="text-zinc-400">Borrador privado</p>
