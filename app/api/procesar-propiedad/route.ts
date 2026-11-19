@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../admin-access';
 
+import { camposFicha } from '../admin/propiedades/campos';
+
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const esperar = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -37,20 +39,14 @@ export async function POST(req: Request) {
     if (denied) return denied;
 
     const body = await req.json();
-    const {
-      direccion_privada,
-      ciudad_zona,
-      precio,
-      arv,
-      beds,
-      baths,
-      sqft,
-      lot_size,
-      year_built,
-      drive_url,
-      imagen_portada,
-      notas_extra,
-    } = body;
+    let ficha;
+    try {
+      ficha = camposFicha(body);
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+    }
+    const { ciudad_zona, precio, arv, beds, baths, sqft, lot_size, year_built, notas_extra } = ficha;
+    const generar = body.generar_anuncios !== false && ciudad_zona && precio && precio > 0;
 
     const prompt = `
 Eres un experto en marketing inmobiliario (Wholesaling / Fix & Flip / Owner Finance) en Arizona (Phoenix y alrededores).
@@ -63,7 +59,7 @@ Genera 4 textos persuasivos y listos para copiar basados en esta propiedad:
 - Notas adicionales: ${notas_extra || 'Ninguna'}
 
 Reglas obligatorias:
-1. NUNCA menciones la dirección exacta (${direccion_privada}), solo la ciudad/código postal (${ciudad_zona}).
+1. NUNCA menciones la dirección exacta, solo la ciudad/código postal (${ciudad_zona}).
 2. script_fb_es: Post para Facebook Marketplace / Grupos en español enfocado en familias trabajadoras e inversionistas latinos. Destaca: Aceptamos ITIN o Pasaporte, desde 15% de enganche, financiamiento privado directo sin banco y entrega rápida. Incluye llamado a acción para pedir información por WhatsApp.
 3. script_fb_en: Post corto, directo y de alto impacto en inglés para cash buyers e inversionistas (destaca margen vs ARV, potencial de renta/remodelación y cierre rápido).
 4. script_wa_vip: Mensaje corto con emojis estructurados para enviar al grupo VIP de WhatsApp anunciando que acaba de entrar esta propiedad al catálogo.
@@ -79,7 +75,7 @@ Reglas obligatorias:
       script_filtro_curiosos: string;
     } | null = null;
 
-    for (const modelo of modelos) {
+    for (const modelo of generar ? modelos : []) {
       for (let intento = 1; intento <= 2; intento++) {
         try {
           const response = await ai.models.generateContent({
@@ -118,7 +114,7 @@ Reglas obligatorias:
     }
 
     // Si Google está 100% saturado, usa plantilla automática para nunca perder la captura
-    if (!scripts) {
+    if (!scripts && generar && ciudad_zona && precio !== null) {
       scripts = generarScriptsRespaldo({
         ciudad_zona,
         precio,
@@ -133,18 +129,12 @@ Reglas obligatorias:
       .from('propiedades')
       .insert([
         {
-          direccion_privada,
-          ciudad_zona,
-          precio: Number(precio),
-          arv: arv ? Number(arv) : null,
-          beds: beds ? Number(beds) : null,
-          baths: baths ? Number(baths) : null,
-          sqft: sqft ? Number(sqft) : null,
-          lot_size: lot_size || null,
-          year_built: year_built ? Number(year_built) : null,
-          drive_url: drive_url || null,
-          imagen_portada: imagen_portada || null,
-          ...scripts,
+          ...ficha,
+          publicada_en: null,
+          script_fb_es: scripts?.script_fb_es ?? '',
+          script_fb_en: scripts?.script_fb_en ?? '',
+          script_wa_vip: scripts?.script_wa_vip ?? '',
+          script_filtro_curiosos: scripts?.script_filtro_curiosos ?? '',
         },
       ])
       .select()

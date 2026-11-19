@@ -75,7 +75,21 @@ globalThis.fetch = async (input, init) => {
       }
       case 'PATCH': {
         const id = url.searchParams.get('id').slice(3);
-        properties.set(id, { ...properties.get(id), ...(await request.json()) });
+        const existing = properties.get(id);
+        const filters = ['imagen_portada', 'drive_url'];
+        if (!existing || (url.searchParams.has('publicada_en') && existing.publicada_en !== null)
+          || filters.some((field) => {
+            const filter = url.searchParams.get(field);
+            return filter === 'is.null' ? existing[field] !== null
+              : filter !== null && existing[field] !== filter.slice(3);
+          })) return Response.json([]);
+
+        const changes = await request.json();
+        if (changes.publicada_en && (!existing.ciudad_zona || !(existing.precio > 0))) {
+          return Response.json({ code: '23514' }, { status: 400 });
+        }
+        properties.set(id, { ...existing, ...changes });
+        if (url.searchParams.has('select')) return Response.json([{ id }]);
         return new Response(null, { status: 204 });
       }
       case 'DELETE':
@@ -163,4 +177,51 @@ test('si falta la lista de acceso, la cuenta válida no obtiene acceso', async (
   } finally {
     process.env.ADMIN_USER_IDS = allowed;
   }
+});
+
+
+test('el operador guarda, completa y publica un borrador con la portada que revisó', async () => {
+  const start = serviceCalls.length;
+  const creation = await request(POST, 'POST', { token: seller, body: {
+    direccion_privada: '123 Test St',
+    notas_extra: 'Información para completar la ficha',
+    generar_anuncios: false,
+  } });
+  assert.equal(creation.status, 200);
+  assert.deepEqual(serviceCalls.slice(start), ['/auth/v1/user', '/rest/v1/propiedades']);
+  const { propiedad: draft } = await creation.json();
+  assert.equal(draft.publicada_en, null);
+  assert.equal(draft.precio, null);
+
+  const cover = 'https://images.test/casa.jpg';
+  const folder = 'https://drive.google.com/drive/folders/test';
+  function patch(body) {
+    return request(PATCH, 'PATCH', { token: seller, body: { id: draft.id, ...body } });
+  }
+  function save(ficha) {
+    return patch({ accion: 'guardar_borrador', ficha });
+  }
+  function publish(portada_revisada, carpeta_revisada = folder) {
+    return patch({ accion: 'publicar', portada_revisada, carpeta_revisada });
+  }
+
+  assert.equal((await publish(null)).status, 400);
+  assert.equal((await save({ imagen_portada: cover, drive_url: folder })).status, 200);
+  assert.equal((await publish(cover)).status, 400);
+
+  assert.equal((await save({
+    ciudad_zona: 'Phoenix 85035', precio: 123000, imagen_portada: cover, drive_url: folder,
+  })).status, 200);
+  assert.equal((await publish('https://images.test/otra.jpg')).status, 409);
+  assert.equal((await publish(cover, 'https://drive.google.com/drive/folders/otra')).status, 409);
+  assert.equal((await publish(cover)).status, 200);
+  assert.equal((await publish(cover)).status, 409);
+  assert.equal((await save({ ciudad_zona: 'Otro valor' })).status, 409);
+
+  const inventory = await (await request(GET, 'GET', { token: seller })).json();
+  const published = inventory.propiedades.find(({ id }) => id === draft.id);
+  assert.equal(published.ciudad_zona, 'Phoenix 85035');
+  assert.equal(published.precio, 123000);
+  assert.ok(Number.isFinite(Date.parse(published.publicada_en)));
+  assert.equal(published.ultima_confirmacion, published.publicada_en);
 });

@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { CAMPOS_PUBLICOS, enlaceWhatsApp, type PropiedadPublica } from '@/lib/propiedades-publicas';
 import {
   MapPin,
   BedDouble,
@@ -12,24 +14,6 @@ import {
   CheckCircle2,
   ShieldCheck,
 } from 'lucide-react';
-
-interface PropiedadPublica {
-  id: string;
-  ciudad_zona: string;
-  precio: number;
-  arv: number | null;
-  beds: number | null;
-  baths: number | null;
-  sqft: number | null;
-  lot_size: string | null;
-  year_built: number | null;
-  drive_url: string | null;
-  imagen_portada: string | null;
-  estado: 'disponible' | 'en_contrato' | 'vendida';
-}
-
-// Reemplaza por el número de WhatsApp de tu amigo (con código de país, sin +)
-const WHATSAPP_ASESOR = '16025550199';
 
 export default function CatalogoPublico() {
   const [propiedades, setPropiedades] = useState<PropiedadPublica[]>([]);
@@ -46,10 +30,8 @@ export default function CatalogoPublico() {
   useEffect(() => {
     const cargar = async () => {
       const { data } = await supabase
-        .from('propiedades')
-        .select(
-          'id, ciudad_zona, precio, arv, beds, baths, sqft, lot_size, year_built, drive_url, imagen_portada, estado'
-        )
+        .from('propiedades_publicas')
+        .select(CAMPOS_PUBLICOS)
         .neq('estado', 'vendida')
         .order('created_at', { ascending: false });
 
@@ -77,7 +59,7 @@ export default function CatalogoPublico() {
   };
 
   const filtradas = propiedades.filter((p) =>
-    p.ciudad_zona.toLowerCase().includes(filtroZona.toLowerCase())
+    p.ciudad_zona.toLowerCase().includes(filtroZona.trim().toLowerCase())
   );
 
   return (
@@ -121,11 +103,6 @@ export default function CatalogoPublico() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filtradas.map((prop) => {
-              const mensajeWa = encodeURIComponent(
-                `Hola, me interesa recibir la dirección exacta y detalles de la propiedad en ${prop.ciudad_zona} de $${Number(
-                  prop.precio
-                ).toLocaleString()} USD.`
-              );
               return (
                 <article
                   key={prop.id}
@@ -189,6 +166,9 @@ export default function CatalogoPublico() {
                   </div>
 
                   <div className="p-4 pt-0 space-y-2">
+                    <Link href={`/propiedades/${prop.id}`} className="block text-center text-sm text-amber-300">
+                      Ver ficha
+                    </Link>
                     {prop.drive_url && (
                       <a
                         href={prop.drive_url}
@@ -200,7 +180,7 @@ export default function CatalogoPublico() {
                       </a>
                     )}
                     <a
-                      href={`https://wa.me/${WHATSAPP_ASESOR}?text=${mensajeWa}`}
+                      href={enlaceWhatsApp(prop)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"

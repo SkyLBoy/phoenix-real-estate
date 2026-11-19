@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import type { Session } from '@supabase/supabase-js';
 import { supabaseAdminAuth } from '@/lib/supabase-admin-auth';
 import {
@@ -15,14 +16,19 @@ import {
 
 interface Propiedad {
   id: string;
-  direccion_privada: string;
-  ciudad_zona: string;
-  precio: number;
+  direccion_privada: string | null;
+  ciudad_zona: string | null;
+  precio: number | null;
   arv: number | null;
   beds: number | null;
   baths: number | null;
   sqft: number | null;
   drive_url: string | null;
+  imagen_portada: string | null;
+  lot_size: string | null;
+  year_built: number | null;
+  notas_extra: string | null;
+  publicada_en: string | null;
   estado: 'disponible' | 'en_contrato' | 'vendida';
   script_fb_es: string;
   script_fb_en: string;
@@ -189,6 +195,25 @@ function Inventario({
   const [driveUrl, setDriveUrl] = useState('');
   const [imagenPortada, setImagenPortada] = useState('');
   const [notasExtra, setNotasExtra] = useState('');
+  const [editando, setEditando] = useState<string | null>(null);
+  const [revisando, setRevisando] = useState<string | null>(null);
+  const [publicando, setPublicando] = useState(false);
+
+  const cargarFormulario = (prop?: Propiedad) => {
+    setEditando(prop?.id ?? null);
+    setDireccionPrivada(prop?.direccion_privada ?? '');
+    setCiudadZona(prop?.ciudad_zona ?? '');
+    setPrecio(String(prop?.precio ?? ''));
+    setArv(String(prop?.arv ?? ''));
+    setBeds(String(prop?.beds ?? ''));
+    setBaths(String(prop?.baths ?? ''));
+    setSqft(String(prop?.sqft ?? ''));
+    setLotSize(prop?.lot_size ?? '');
+    setYearBuilt(String(prop?.year_built ?? ''));
+    setDriveUrl(prop?.drive_url ?? '');
+    setImagenPortada(prop?.imagen_portada ?? '');
+    setNotasExtra(prop?.notas_extra ?? '');
+  };
 
   const mostrarError = useCallback((error: unknown, mensaje: string) => {
     if (error instanceof Error && (error.cause === 401 || error.cause === 403)) {
@@ -219,41 +244,57 @@ function Inventario({
     setErrorOperacion('');
 
     try {
-      await solicitar(userId, '/api/procesar-propiedad', {
-        method: 'POST',
+      const ficha = {
+        direccion_privada: direccionPrivada,
+        ciudad_zona: ciudadZona,
+        precio,
+        arv,
+        beds,
+        baths,
+        sqft,
+        lot_size: lotSize,
+        year_built: yearBuilt,
+        drive_url: driveUrl,
+        imagen_portada: imagenPortada,
+        notas_extra: notasExtra,
+      };
+      const generar = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'generar';
+      await solicitar(userId, editando ? '/api/admin/propiedades' : '/api/procesar-propiedad', {
+        method: editando ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          direccion_privada: direccionPrivada,
-          ciudad_zona: ciudadZona,
-          precio,
-          arv,
-          beds,
-          baths,
-          sqft,
-          lot_size: lotSize,
-          year_built: yearBuilt,
-          drive_url: driveUrl,
-          imagen_portada: imagenPortada,
-          notas_extra: notasExtra,
-        }),
+        body: JSON.stringify(editando
+          ? { id: editando, accion: 'guardar_borrador', ficha }
+          : { ...ficha, generar_anuncios: generar }),
       });
       setIntentoCarga((intento) => intento + 1);
-      setDireccionPrivada('');
-      setCiudadZona('');
-      setPrecio('');
-      setArv('');
-      setBeds('');
-      setBaths('');
-      setSqft('');
-      setLotSize('');
-      setYearBuilt('');
-      setDriveUrl('');
-      setImagenPortada('');
-      setNotasExtra('');
+      cargarFormulario();
     } catch (error) {
       mostrarError(error, 'No se pudo procesar la propiedad');
     } finally {
       setGenerando(false);
+    }
+  };
+
+  const publicar = async (prop: Propiedad) => {
+    setPublicando(true);
+    setErrorOperacion('');
+    try {
+      await solicitar(userId, '/api/admin/propiedades', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: prop.id,
+          accion: 'publicar',
+          portada_revisada: prop.imagen_portada,
+          carpeta_revisada: prop.drive_url,
+        }),
+      });
+      setRevisando(null);
+      setIntentoCarga((intento) => intento + 1);
+    } catch (error) {
+      mostrarError(error, 'No se pudo publicar');
+    } finally {
+      setPublicando(false);
     }
   };
 
@@ -336,7 +377,7 @@ function Inventario({
               <Building2 className="text-amber-400" /> Panel de Operaciones & IA
             </h1>
             <p className="text-sm text-zinc-400">
-              Carga datos crudos → Genera scripts listos y publica en el catálogo
+              Guarda borradores, revisa la portada y publica en el catálogo.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -357,11 +398,12 @@ function Inventario({
 
         {/* Formulario de Ingesta */}
         <form
+          id="formulario-ficha"
           onSubmit={procesarPropiedad}
           className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4"
         >
           <h2 className="font-semibold text-amber-400 flex items-center gap-2">
-            <Sparkles size={18} /> Nueva Propiedad
+            <Sparkles size={18} /> {editando ? 'Editar borrador' : 'Nueva propiedad'}
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -370,7 +412,6 @@ function Inventario({
               placeholder="Dirección exacta (PRIVADA - Ej: 4512 W McDowell Rd)"
               value={direccionPrivada}
               onChange={(e) => setDireccionPrivada(e.target.value)}
-              required
               className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
             />
             <input
@@ -378,7 +419,6 @@ function Inventario({
               placeholder="Zona pública (Ej: Phoenix, AZ 85035)"
               value={ciudadZona}
               onChange={(e) => setCiudadZona(e.target.value)}
-              required
               className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
             />
           </div>
@@ -389,7 +429,6 @@ function Inventario({
               placeholder="Precio ($ USD)"
               value={precio}
               onChange={(e) => setPrecio(e.target.value)}
-              required
               className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
             />
             <input
@@ -471,14 +510,24 @@ function Inventario({
             className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 transition cursor-pointer"
           >
             <Sparkles size={18} />
-            {generando ? 'Generando scripts con IA...' : 'Publicar y Generar Anuncios'}
+            {generando ? 'Guardando…' : 'Guardar borrador'}
           </button>
+          {editando ? (
+            <button type="button" onClick={() => cargarFormulario()} disabled={generando}>
+              Cancelar edición
+            </button>
+          ) : (
+            <button type="submit" value="generar" disabled={generando || !ciudadZona.trim() || Number(precio) <= 0}
+              className="text-sm text-amber-300">
+              Guardar y generar anuncios
+            </button>
+          )}
         </form>
 
         {/* Lista de Propiedades y Scripts */}
         <section className="space-y-6">
           <h2 className="text-lg font-semibold">
-            Inventario Activo ({propiedades.length})
+            Inventario ({propiedades.length})
           </h2>
 
           {propiedades.map((prop) => (
@@ -492,13 +541,13 @@ function Inventario({
                     {prop.ciudad_zona}
                   </span>
                   <h3 className="text-lg font-bold text-zinc-100">
-                    {prop.direccion_privada}{' '}
+                    {prop.direccion_privada || 'Ficha sin dirección'}{' '}
                     <span className="text-xs font-normal text-zinc-500">
                       (Solo visible aquí)
                     </span>
                   </h3>
                   <p className="text-sm text-zinc-300">
-                    Precio: <strong>${Number(prop.precio).toLocaleString()}</strong>
+                    Precio: <strong>{prop.precio == null ? 'Pendiente' : `$${Number(prop.precio).toLocaleString()}`}</strong>
                     {prop.arv && ` · ARV: $${Number(prop.arv).toLocaleString()}`}
                     {prop.beds && ` · ${prop.beds} bd`}
                     {prop.baths && ` / ${prop.baths} ba`}
@@ -526,6 +575,46 @@ function Inventario({
                 </div>
               </div>
 
+              {prop.publicada_en ? (
+                <Link href={`/propiedades/${prop.id}`} className="text-sm text-amber-300">
+                  Publicada · Ver ficha
+                </Link>
+              ) : (
+                <div className="space-y-3 text-sm">
+                  <p className="text-zinc-400">Borrador privado</p>
+                  <div className="flex flex-wrap gap-4">
+                    <a href="#formulario-ficha" onClick={() => {
+                      cargarFormulario(prop);
+                      setRevisando(null);
+                    }} className="text-amber-300">Editar borrador</a>
+                    <button type="button"
+                      disabled={!prop.ciudad_zona || !prop.precio || !prop.imagen_portada || editando === prop.id}
+                      onClick={() => setRevisando(prop.id)}
+                      className="text-amber-300 disabled:text-zinc-500">
+                      Revisar portada
+                    </button>
+                  </div>
+                  {(!prop.ciudad_zona || !prop.precio || !prop.imagen_portada) && (
+                    <p className="text-zinc-400">Para publicar, guarda zona, precio y URL de portada.</p>
+                  )}
+                  {revisando === prop.id && prop.imagen_portada && (
+                    <div className="space-y-3">
+                      <p>Abre la portada y comprueba que no muestre la dirección exacta.</p>
+                      <a href={prop.imagen_portada} target="_blank" rel="noopener noreferrer"
+                        className="block text-amber-300">Abrir portada</a>
+                      {prop.drive_url && (
+                        <a href={prop.drive_url} target="_blank" rel="noopener noreferrer"
+                          className="block text-amber-300">Revisar carpeta pública de Drive</a>
+                      )}
+                      <button type="button" disabled={publicando} onClick={() => publicar(prop)}
+                        className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-zinc-950 disabled:opacity-50">
+                        {publicando ? 'Publicando…' : 'Confirmar revisión y publicar'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 4 Scripts listos para copiar */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[
@@ -533,7 +622,7 @@ function Inventario({
                   { key: 'fb_en', label: 'Facebook Inglés (Investors)', text: prop.script_fb_en },
                   { key: 'wa_vip', label: 'Grupo VIP WhatsApp', text: prop.script_wa_vip },
                   { key: 'filtro', label: 'Respuesta Filtro Curiosos', text: prop.script_filtro_curiosos },
-                ].map((item) => {
+                ].filter((item) => item.text).map((item) => {
                   const uniqueId = `${prop.id}-${item.key}`;
                   return (
                     <div

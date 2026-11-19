@@ -58,3 +58,21 @@ autorizada. El catálogo público sigue disponible sin cuenta.
 Ejecuta `npm test` con Node.js 22.15 o posterior para comprobar las rutas
 privadas con Supabase y Gemini simulados. La prueba con una cuenta real se
 puede hacer después de configurar `ADMIN_USER_IDS`.
+
+## Migración del catálogo y publicación de fichas
+
+Ejecuta el SQL de `supabase/migrations/20261119000200_publicacion_propiedades.sql`
+en el SQL Editor de Supabase antes de desplegar esta versión. Requiere Postgres 15
+o posterior y las tablas existentes `propiedades` y `leads_compradores`.
+Prepara el cambio de código y SQL para la misma ventana. El catálogo quedará
+vacío hasta que vuelvas a publicar fichas desde el panel.
+
+Las propiedades existentes conservan sus datos, textos e ID y pasan a borrador
+privado. Desde el panel, completa los campos que falten, abre la portada y la
+carpeta de Drive para revisarlas y pulsa **Confirmar revisión y publicar**.
+El catálogo lee de `propiedades_publicas`. La vista respeta RLS y expone los
+campos públicos solo para fichas publicadas. El formulario VIP conserva la
+inserción anónima y su listado queda protegido.
+
+Configura `NEXT_PUBLIC_WHATSAPP_ASESOR` como el número del vendedor con código
+de país, solo dígitos. Sin la variable, se conserva el número de prueba.
