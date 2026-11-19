@@ -118,6 +118,20 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ message: 'Invalid token' }, { status: 401 });
   }
 
+  if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades_publicas') {
+    assert.equal(request.headers.get('authorization'), 'Bearer anon-key');
+    assert.equal(url.searchParams.get('estado'), 'eq.disponible');
+    assert.equal(url.searchParams.get('order'), 'created_at.desc,id.asc');
+    const campos = url.searchParams.get('select').split(',');
+    assert.deepEqual(campos, ['ciudad_zona', 'precio', 'estado', 'ultima_confirmacion']);
+    const inicio = Number(url.searchParams.get('offset'));
+    const limite = Number(url.searchParams.get('limit'));
+    return Response.json([...properties.values()]
+      .filter((ficha) => ficha.publicada_en && ficha.estado === 'disponible')
+      .slice(inicio, inicio + limite)
+      .map((ficha) => Object.fromEntries(campos.map((campo) => [campo, ficha[campo] ?? null]))));
+  }
+
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades') {
     switch (request.method) {
       case 'GET': {
@@ -592,4 +606,39 @@ test('confirmar y reactivar actualizan la fecha sin cambiar el identificador de 
   assert.equal((await request(PATCH, 'PATCH', {
     token: seller, body: { id: 'ficha-que-no-existe', estado: 'disponible' },
   })).status, 404);
+});
+
+
+test('el aviso trae fichas vigentes de días anteriores y comparte solo un enlace al catálogo', async () => {
+  const { cargarFichasDelAviso, prepararAvisoWhatsApp } = await import('../lib/aviso-whatsapp.ts');
+  const respaldo = [...properties.entries()];
+  properties.clear();
+  try {
+    const fecha = '2026-11-15T00:00:00Z';
+    const reciente = '2026-11-19T18:00:00Z';
+    const ahora = Date.parse('2026-11-19T19:00:00Z');
+    const base = { publicada_en: fecha, ultima_confirmacion: reciente, precio: 250000, estado: 'disponible' };
+    properties.set('pendiente', { ...base, ciudad_zona: 'Mesa 85201', ultima_confirmacion: fecha, precio: 189000.5 });
+    properties.set('confirmada', { ...base, ciudad_zona: 'Phoenix 85035', direccion_privada: '123 Calle privada' });
+    properties.set('contrato', { ...base, ciudad_zona: 'En contrato', estado: 'en_contrato' });
+    properties.set('vendida', { ...base, ciudad_zona: 'Ya no disponible', estado: 'vendida' });
+    properties.set('borrador', { ...base, ciudad_zona: 'Borrador privado', publicada_en: null });
+    for (let i = 0; i < 99; i++) {
+      properties.set(`previa-${i}`, { ...base, ciudad_zona: `Tempe ${i}` });
+    }
+
+    const fichas = await cargarFichasDelAviso();
+    assert.equal(fichas.length, 101);
+    const aviso = prepararAvisoWhatsApp(fichas, 'https://catalogo.test/admin', ahora);
+    assert.match(aviso, /Phoenix 85035 — \$250,000 USD/);
+    assert.match(aviso, /Mesa 85201 — \$189,000\.5 USD \(Por confirmar\)/);
+    assert.ok(aviso.indexOf('Phoenix') < aviso.indexOf('Mesa'));
+    assert.match(aviso, /Tempe 98/);
+    assert.doesNotMatch(aviso, /Calle privada|En contrato|Ya no disponible|Borrador privado/);
+    assert.deepEqual(aviso.match(/https?:\/\/[^\s]+/g), ['https://catalogo.test/']);
+    assert.equal(prepararAvisoWhatsApp([], 'https://catalogo.test', ahora), '');
+  } finally {
+    properties.clear();
+    for (const [id, ficha] of respaldo) properties.set(id, ficha);
+  }
 });

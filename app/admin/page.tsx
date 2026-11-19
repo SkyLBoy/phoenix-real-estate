@@ -7,6 +7,7 @@ import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
 import { etiquetaDisponibilidad, type EstadoDisponibilidad } from '@/lib/disponibilidad';
 import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import type { TextosFicha } from '@/lib/textos-propiedad';
+import { AvisoWhatsApp, CopiarEnlaceFicha } from './aviso-whatsapp';
 import { TextosDeFicha } from './textos-ficha';
 import { DescargarFotoDrive, SelectorFotosDrive, VistaFotoDrive } from './fotos-drive';
 import { supabaseAdminAuth } from '@/lib/supabase-admin-auth';
@@ -285,6 +286,7 @@ function Inventario({
   }, []);
 
   const [intentoCarga, setIntentoCarga] = useState(0);
+  const [revisionAviso, setRevisionAviso] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -354,6 +356,7 @@ function Inventario({
         }),
       });
       setRevisando(null);
+      setRevisionAviso((revision) => revision + 1);
       setIntentoCarga((intento) => intento + 1);
     } catch (error) {
       mostrarError(error, 'No se pudo publicar');
@@ -375,6 +378,7 @@ function Inventario({
       });
       setPropiedades((actuales) => actuales?.map((prop) => prop.id === id
         ? { ...prop, ...disponibilidad } : prop) ?? null);
+      setRevisionAviso((revision) => revision + 1);
     } catch (error) {
       mostrarError(error, 'No se pudo cambiar el estado');
     } finally {
@@ -393,6 +397,7 @@ function Inventario({
       await solicitar(userId, `/api/admin/propiedades?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
+      setRevisionAviso((revision) => revision + 1);
       setIntentoCarga((intento) => intento + 1);
     } catch (error) {
       mostrarError(error, 'No se pudo eliminar la propiedad');
@@ -464,6 +469,8 @@ function Inventario({
         {(errorSesion || errorOperacion) && (
           <p role="alert" className="text-sm text-red-300">{errorSesion || errorOperacion}</p>
         )}
+
+        <AvisoWhatsApp key={revisionAviso} ahora={ahora} />
 
         {/* Formulario de Ingesta */}
         <form
@@ -673,6 +680,7 @@ function Inventario({
             const tienePortada = Boolean(fotoPortada || prop.imagen_portada);
             const etiqueta = etiquetaDisponibilidad(prop.estado, prop.ultima_confirmacion, ahora);
             const actualizando = cambiosDisponibilidad.has(prop.id);
+            const rutaFicha = `/propiedades/${encodeURIComponent(prop.id)}`;
             return (
               <div
                 key={prop.id}
@@ -711,9 +719,10 @@ function Inventario({
 
                 {prop.publicada_en ? (
                   <div className="space-y-3 text-sm">
-                    <Link href={`/propiedades/${prop.id}`} className="text-amber-300">
+                    <Link href={rutaFicha} className="text-amber-300">
                       Publicada · Ver ficha
                     </Link>
+                    <CopiarEnlaceFicha ruta={rutaFicha} />
                     <p aria-live="polite" className={etiqueta === 'Por confirmar' ? 'font-semibold text-amber-300' : 'font-medium'}>
                       {actualizando ? 'Actualizando disponibilidad…' : etiqueta}
                     </p>
