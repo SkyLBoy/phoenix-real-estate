@@ -39,6 +39,8 @@ process.env.ADMIN_USER_IDS = `${seller}, ${technician}`;
 
 const properties = new Map();
 const serviceCalls = [];
+const entradasGemini = [];
+let simularGeminiInvalido = false;
 const fotoDrive = { id: 'foto-1', name: 'Sala.jpg', resourceKey: 'clave-foto' };
 const carpetaDrive = 'https://drive.google.com/drive/folders/carpeta-1?resourcekey=clave-carpeta';
 const property = { id: 'casa-1', ciudad_zona: 'Phoenix', estado: 'disponible' };
@@ -55,8 +57,10 @@ globalThis.fetch = async (input, init) => {
   serviceCalls.push(url.pathname);
 
   if (url.hostname === 'generativelanguage.googleapis.com') {
+    entradasGemini.push(await request.text());
+    const respuesta = simularGeminiInvalido ? { script_fb_es: 'Incompleto' } : scripts;
     return Response.json({
-      candidates: [{ content: { parts: [{ text: JSON.stringify(scripts) }] } }],
+      candidates: [{ content: { parts: [{ text: JSON.stringify(respuesta) }] } }],
     });
   }
 
@@ -123,6 +127,14 @@ globalThis.fetch = async (input, init) => {
           const ficha = properties.get(url.searchParams.get('id').slice(3));
           return Response.json(ficha?.publicada_en && ficha.estado !== 'vendida' ? [ficha] : []);
         }
+        if (url.searchParams.has('textos_version')) {
+          const ficha = properties.get(url.searchParams.get('id').slice(3));
+          if (String(ficha?.textos_version) !== url.searchParams.get('textos_version').slice(3)) {
+            return Response.json([]);
+          }
+          return Response.json([Object.fromEntries(url.searchParams.get('select').split(',')
+            .map((campo) => [campo, ficha[campo] ?? null]))]);
+        }
         return Response.json([...properties.values()]);
       }
       case 'POST': {
@@ -134,20 +146,20 @@ globalThis.fetch = async (input, init) => {
       case 'PATCH': {
         const id = url.searchParams.get('id').slice(3);
         const existing = properties.get(id);
-        const filters = ['imagen_portada', 'drive_url', 'portada_drive_id'];
+        const filtros = [...url.searchParams].filter(([campo]) => !['id', 'select', 'publicada_en'].includes(campo));
         if (!existing || (url.searchParams.has('publicada_en') && existing.publicada_en !== null)
-          || filters.some((field) => {
-            const filter = url.searchParams.get(field);
-            return filter === 'is.null' ? existing[field] !== null
-              : filter !== null && existing[field] !== filter.slice(3);
-          })) return Response.json([]);
+          || filtros.some(([campo, filtro]) => filtro === 'is.null' ? existing[campo] != null
+            : String(existing[campo]) !== filtro.slice(3))) return Response.json([]);
 
         const changes = await request.json();
         if (changes.publicada_en && (!existing.ciudad_zona || !(existing.precio > 0))) {
           return Response.json({ code: '23514' }, { status: 400 });
         }
         properties.set(id, { ...existing, ...changes });
-        if (url.searchParams.has('select')) return Response.json([{ id }]);
+        if (url.searchParams.has('select')) {
+          return Response.json([Object.fromEntries(url.searchParams.get('select').split(',')
+            .map((campo) => [campo, properties.get(id)[campo]]))]);
+        }
         return new Response(null, { status: 204 });
       }
       case 'DELETE':
@@ -450,4 +462,89 @@ test('sin clave, el panel lee Drive público y conserva las descargas y portadas
   } finally {
     process.env.GOOGLE_DRIVE_API_KEY = clave;
   }
+});
+
+
+test('los cuatro borradores se generan con datos públicos y la aprobación corresponde al texto guardado', async () => {
+  const { POST: TEXTOS } = await import('../app/api/admin/textos/route.ts');
+  const id = 'texto-casa';
+  const ficha = {
+    id, textos_version: 0, ciudad_zona: 'Mesa, AZ 85201', precio: 225000,
+    arv: 310000, estado: 'disponible', beds: 3, baths: 2,
+    lot_size: '1234 Privada Street', direccion_privada: '1234 Privada Street',
+    notas_extra: 'Esto es privado y no se debe pasar a Gemini',
+    drive_url: 'https://drive.google.com/drive/folders/privada',
+  };
+  properties.set(id, ficha);
+
+  function operar(body, token = seller) {
+    return TEXTOS(new Request('https://panel.test/api/admin/textos', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...body }),
+    }));
+  }
+
+  assert.equal((await operar({ accion: 'generar', version: 0 }, outsider)).status, 403);
+  const start = entradasGemini.length;
+  const generados = await operar({
+    accion: 'generar', version: 0, condiciones: { financiamiento: true, enganche: 17, incluirArv: true },
+  });
+  assert.equal(generados.status, 200);
+  const primera = await generados.json();
+  assert.equal(primera.origen, 'gemini');
+  for (const [canal, texto] of Object.entries(scripts)) {
+    assert.equal(primera.textos[canal], texto);
+    assert.equal(primera.textos[`${canal}_aprobado`], false);
+  }
+  const cargaGemini = entradasGemini[start];
+  assert.match(cargaGemini, /Mesa, AZ 85201/);
+  assert.match(cargaGemini, /310000/);
+  assert.match(cargaGemini, /enganche/);
+  assert.doesNotMatch(cargaGemini, /Privada Street|Esto es privado|drive\.google\.com|notas_extra/);
+
+  const canal = 'script_fb_es';
+  assert.equal((await operar({ accion: 'aprobar', version: 1, canal, texto: 'Texto no guardado' })).status, 409);
+  const aprobacion = await operar({ accion: 'aprobar', version: 1, canal, texto: scripts[canal] });
+  assert.equal(aprobacion.status, 200);
+  const aprobados = (await aprobacion.json()).textos;
+  assert.equal(aprobados.script_fb_es_aprobado, true);
+  assert.equal(aprobados.script_fb_en_aprobado, false);
+
+  assert.equal((await operar({ accion: 'guardar', version: 1, canal, texto: 'Versión vieja' })).status, 409);
+  const guardado = await operar({ accion: 'guardar', version: 2, canal, texto: 'Texto corregido' });
+  assert.equal(guardado.status, 200);
+  const corregidos = (await guardado.json()).textos;
+  assert.equal(corregidos.script_fb_es, 'Texto corregido');
+  assert.equal(corregidos.script_fb_es_aprobado, false);
+
+  simularGeminiInvalido = true;
+  try {
+    const respaldos = await operar({ accion: 'generar', version: 3, condiciones: { itin: true } });
+    assert.equal(respaldos.status, 200);
+    const respaldo = await respaldos.json();
+    assert.equal(respaldo.origen, 'plantillas');
+    assert.match(respaldo.textos.script_fb_es, /ITIN/);
+    assert.doesNotMatch(respaldo.textos.script_fb_es, /enganche|pasaporte|financiamiento|310,000/i);
+    assert.equal(respaldo.textos.script_fb_es_aprobado, false);
+    assert.equal((await operar({
+      accion: 'aprobar', version: 4, canal, texto: respaldo.textos.script_fb_es,
+    })).status, 200);
+  } finally {
+    simularGeminiInvalido = false;
+  }
+});
+
+test('la generación rechaza una posible dirección escrita como zona pública', async () => {
+  const { POST: TEXTOS } = await import('../app/api/admin/textos/route.ts');
+  const id = 'zona-direccion';
+  properties.set(id, { id, textos_version: 0, ciudad_zona: '12345 W Main St', precio: 100000, estado: 'disponible' });
+  const start = entradasGemini.length;
+  const respuesta = await TEXTOS(new Request('https://panel.test/api/admin/textos', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${seller}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, accion: 'generar', version: 0 }),
+  }));
+  assert.equal(respuesta.status, 400);
+  assert.equal(entradasGemini.length, start);
 });

@@ -4,20 +4,20 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@supabase/supabase-js';
 import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
+import type { TextosFicha } from '@/lib/textos-propiedad';
+import { TextosDeFicha } from './textos-ficha';
 import { DescargarFotoDrive, SelectorFotosDrive, VistaFotoDrive } from './fotos-drive';
 import { supabaseAdminAuth } from '@/lib/supabase-admin-auth';
 import { camposPegables, leerDatosPegados, type CampoPegable } from './datos-pegados';
 import {
   Sparkles,
-  Copy,
-  Check,
   Lock,
   Trash2,
   ExternalLink,
   Building2,
 } from 'lucide-react';
 
-interface Propiedad {
+interface Propiedad extends TextosFicha {
   id: string;
   direccion_privada: string | null;
   ciudad_zona: string | null;
@@ -35,10 +35,6 @@ interface Propiedad {
   notas_extra: string | null;
   publicada_en: string | null;
   estado: 'disponible' | 'en_contrato' | 'vendida';
-  script_fb_es: string;
-  script_fb_en: string;
-  script_wa_vip: string;
-  script_filtro_curiosos: string;
 }
 
 async function respuestaPrivada(userId: string, url: string, options: RequestInit = {}) {
@@ -189,7 +185,6 @@ function Inventario({
   const [accesoDenegado, setAccesoDenegado] = useState(false);
   const [errorOperacion, setErrorOperacion] = useState('');
   const [generando, setGenerando] = useState(false);
-  const [copiadoId, setCopiadoId] = useState<string | null>(null);
 
   // Campos del formulario
   const [direccionPrivada, setDireccionPrivada] = useState('');
@@ -322,13 +317,12 @@ function Inventario({
         portada_drive_id: portadaDrive,
         notas_extra: notasExtra,
       };
-      const generar = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'generar';
       await solicitar(userId, editando ? '/api/admin/propiedades' : '/api/procesar-propiedad', {
         method: editando ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editando
           ? { id: editando, accion: 'guardar_borrador', ficha }
-          : { ...ficha, generar_anuncios: generar }),
+          : { ...ficha, generar_anuncios: false }),
       });
       setIntentoCarga((intento) => intento + 1);
       cargarFormulario();
@@ -390,11 +384,6 @@ function Inventario({
     }
   };
 
-  const copiarTexto = (clave: string, texto: string) => {
-    navigator.clipboard.writeText(texto);
-    setCopiadoId(clave);
-    setTimeout(() => setCopiadoId(null), 2000);
-  };
 
   const botonCerrarSesion = (
     <button
@@ -651,14 +640,9 @@ function Inventario({
             <Sparkles size={18} />
             {generando ? 'Guardando…' : 'Guardar borrador'}
           </button>
-          {editando ? (
+          {editando && (
             <button type="button" onClick={() => cargarFormulario()} disabled={generando}>
               Cancelar edición
-            </button>
-          ) : (
-            <button type="submit" value="generar" disabled={generando || !ciudadZona.trim() || Number(precio) <= 0}
-              className="text-sm text-amber-300">
-              Guardar y generar anuncios
             </button>
           )}
         </form>
@@ -780,47 +764,22 @@ function Inventario({
                   </details>
                 )}
 
-                {/* 4 Scripts listos para copiar */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {[
-                    { key: 'fb_es', label: 'Facebook Español (ITIN / 15%)', text: prop.script_fb_es },
-                    { key: 'fb_en', label: 'Facebook Inglés (Investors)', text: prop.script_fb_en },
-                    { key: 'wa_vip', label: 'Grupo VIP WhatsApp', text: prop.script_wa_vip },
-                    { key: 'filtro', label: 'Respuesta Filtro Curiosos', text: prop.script_filtro_curiosos },
-                  ].filter((item) => item.text).map((item) => {
-                    const uniqueId = `${prop.id}-${item.key}`;
-                    return (
-                      <div
-                        key={item.key}
-                        className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 flex flex-col justify-between gap-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-zinc-300">
-                            {item.label}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => copiarTexto(uniqueId, item.text || '')}
-                            className="text-xs bg-zinc-800 hover:bg-zinc-700 px-2.5 py-1 rounded-md flex items-center gap-1 cursor-pointer"
-                          >
-                            {copiadoId === uniqueId ? (
-                              <>
-                                <Check size={13} className="text-emerald-400" /> Copiado
-                              </>
-                            ) : (
-                              <>
-                                <Copy size={13} /> Copiar
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <p className="text-xs text-zinc-400 whitespace-pre-line line-clamp-5">
-                          {item.text}
-                        </p>
-                      </div>
+                <TextosDeFicha
+                  ficha={prop}
+                  puedeGenerar={Boolean(prop.ciudad_zona && prop.precio && prop.estado === 'disponible')}
+                  guardar={async (version, peticion) => {
+                    const respuesta = await solicitar<{ textos: TextosFicha; origen?: string }>(
+                      userId, '/api/admin/textos', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: prop.id, version, ...peticion }),
+                      },
                     );
-                  })}
-                </div>
+                    setPropiedades((actuales) => actuales?.map((ficha) => ficha.id === prop.id
+                      ? { ...ficha, ...respuesta.textos } : ficha) ?? null);
+                    return respuesta;
+                  }}
+                />
               </div>
             );
           })}

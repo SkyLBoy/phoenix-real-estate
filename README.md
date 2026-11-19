@@ -98,3 +98,18 @@ El selector admite JPEG, PNG, WebP, GIF y AVIF que Drive muestre en el primer
 nivel. **Usar de portada** incluye esa imagen en la selección. Se puede
 descargar cada original desde el selector o la ficha guardada. La ficha pública
 muestra la portada y mantiene el enlace a la carpeta completa.
+
+## Generar y aprobar textos
+
+Después de las migraciones de publicación y fotos, ejecuta
+`supabase/migrations/20261119000500_aprobacion_textos.sql` en el SQL Editor.
+Los textos existentes permanecen guardados y requieren su primera aprobación.
+
+En el inventario de `/admin`, abre **Textos de la propiedad**. Marca las
+condiciones confirmadas para esa ficha y genera los cuatro borradores. Edita
+y guarda cada texto, apruébalo y copia la versión final para publicar
+manualmente. Si vuelves a generar, el panel pide confirmar el reemplazo.
+
+Se reutiliza `GEMINI_API_KEY`. Si falta la clave o Gemini no devuelve cuatro
+textos válidos, se usan plantillas con las condiciones confirmadas. Ambos
+resultados requieren revisión y aprobación.
