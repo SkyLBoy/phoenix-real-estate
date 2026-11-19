@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@supabase/supabase-js';
 import { supabaseAdminAuth } from '@/lib/supabase-admin-auth';
+import { camposPegables, leerDatosPegados, type CampoPegable } from './datos-pegados';
 import {
   Sparkles,
   Copy,
@@ -198,9 +199,45 @@ function Inventario({
   const [editando, setEditando] = useState<string | null>(null);
   const [revisando, setRevisando] = useState<string | null>(null);
   const [publicando, setPublicando] = useState(false);
+  const [bloqueDatos, setBloqueDatos] = useState('');
+  const [resultadoPegado, setResultadoPegado] = useState<{
+    reconocidos: CampoPegable[];
+    conservados: CampoPegable[];
+    revisar: CampoPegable[];
+    arvConMas: boolean;
+  } | null>(null);
+
+  const camposFormulario = {
+    direccionPrivada: [direccionPrivada, setDireccionPrivada],
+    ciudadZona: [ciudadZona, setCiudadZona],
+    precio: [precio, setPrecio],
+    arv: [arv, setArv],
+    beds: [beds, setBeds],
+    baths: [baths, setBaths],
+    sqft: [sqft, setSqft],
+    lotSize: [lotSize, setLotSize],
+    yearBuilt: [yearBuilt, setYearBuilt],
+  } as const;
+  const camposFaltantes = (Object.keys(camposFormulario) as CampoPegable[])
+    .filter((campo) => !camposFormulario[campo][0].trim());
+
+  const aplicarDatosPegados = () => {
+    const { valores, revisar, arvConMas } = leerDatosPegados(bloqueDatos);
+    const reconocidos = Object.keys(valores) as CampoPegable[];
+    const conservados: CampoPegable[] = [];
+    for (const campo of reconocidos) {
+      const [actual, actualizar] = camposFormulario[campo];
+      const valor = valores[campo]!;
+      if (!actual.trim()) actualizar(valor);
+      else if (actual !== valor) conservados.push(campo);
+    }
+    setResultadoPegado({ reconocidos, conservados, revisar, arvConMas });
+  };
 
   const cargarFormulario = (prop?: Propiedad) => {
     setEditando(prop?.id ?? null);
+    setBloqueDatos('');
+    setResultadoPegado(null);
     setDireccionPrivada(prop?.direccion_privada ?? '');
     setCiudadZona(prop?.ciudad_zona ?? '');
     setPrecio(String(prop?.precio ?? ''));
@@ -406,6 +443,49 @@ function Inventario({
             <Sparkles size={18} /> {editando ? 'Editar borrador' : 'Nueva propiedad'}
           </h2>
 
+          <div className="space-y-2">
+            <label htmlFor="bloque-datos" className="block text-sm font-medium">
+              Pegar datos de la propiedad
+            </label>
+            <textarea
+              id="bloque-datos"
+              rows={4}
+              value={bloqueDatos}
+              onChange={(event) => {
+                setBloqueDatos(event.target.value);
+                setResultadoPegado(null);
+              }}
+              placeholder={'Price: $296,000\nARV: $399,999+\nBeds: 3\nBaths: 2'}
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={aplicarDatosPegados}
+              disabled={!bloqueDatos.trim() || generando}
+              className="rounded-lg bg-zinc-800 px-3 py-2 text-sm font-medium disabled:opacity-50"
+            >
+              Rellenar campos vacíos
+            </button>
+            {resultadoPegado && (
+              <div role="status" className="space-y-1 text-sm text-zinc-300">
+                <p>{resultadoPegado.reconocidos.length
+                  ? `Reconocidos: ${resultadoPegado.reconocidos.map((campo) => camposPegables[campo][0]).join(', ')}.`
+                  : 'No se reconocieron valores. Usa una etiqueta y un valor por línea o completa el formulario.'}</p>
+                {camposFaltantes.length > 0 && (
+                  <p>Sin completar: {camposFaltantes.map((campo) => camposPegables[campo][0]).join(', ')}.</p>
+                )}
+                {resultadoPegado.revisar.length > 0 && (
+                  <p>Revisa los valores incompletos o ambiguos de {resultadoPegado.revisar.map((campo) => camposPegables[campo][0]).join(', ')}.</p>
+                )}
+                {resultadoPegado.conservados.length > 0 && (
+                  <p>Se conservaron los valores del formulario para {resultadoPegado.conservados.map((campo) => camposPegables[campo][0]).join(', ')}.</p>
+                )}
+                {resultadoPegado.arvConMas && <p>El ARV del bloque llevaba «+». Revisa el importe antes de guardar.</p>}
+                <p>Corrige los datos abajo. Puedes guardar el borrador aunque falten campos.</p>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <input
               type="text"
@@ -426,6 +506,7 @@ function Inventario({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <input
               type="number"
+              step="0.01"
               placeholder="Precio ($ USD)"
               value={precio}
               onChange={(e) => setPrecio(e.target.value)}
@@ -433,6 +514,7 @@ function Inventario({
             />
             <input
               type="number"
+              step="0.01"
               placeholder="ARV ($ opcional)"
               value={arv}
               onChange={(e) => setArv(e.target.value)}
@@ -447,7 +529,7 @@ function Inventario({
             />
             <input
               type="number"
-              step="0.5"
+              step="any"
               placeholder="Baños (Baths)"
               value={baths}
               onChange={(e) => setBaths(e.target.value)}

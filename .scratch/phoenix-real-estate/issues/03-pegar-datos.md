@@ -4,9 +4,11 @@
 
 **Bloqueado por:** 02 · Guardar y publicar una ficha privada
 
-**Estado:** ready-for-agent
+**Estado:** implementado
 
 ## Criterios de aceptación
 
-- [ ] Se muestran campos reconocidos y faltantes.
-- [ ] Los valores se pueden corregir y el borrador incompleto se puede retomar.
+- [x] Se muestran campos reconocidos y faltantes.
+- [x] Los valores se pueden corregir y el borrador incompleto se puede retomar.
+
+**Verificación local:** bloque bilingüe, valores ambiguos y dirección privada, corrección manual del precio y guardado y lectura del borrador con servicios simulados.

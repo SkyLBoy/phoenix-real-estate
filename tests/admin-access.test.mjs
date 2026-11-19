@@ -225,3 +225,63 @@ test('el operador guarda, completa y publica un borrador con la portada que revi
   assert.ok(Number.isFinite(Date.parse(published.publicada_en)));
   assert.equal(published.ultima_confirmacion, published.publicada_en);
 });
+
+
+test('el bloque bilingüe se convierte en una ficha corregible y se guarda como borrador', async () => {
+  const { leerDatosPegados } = await import('../app/admin/datos-pegados.ts');
+  const { valores, revisar, arvConMas } = leerDatosPegados([
+    'Casa habitable en Phoenix',
+    'Price: $296,000',
+    'ARV: $399,999+',
+    'Beds: 3',
+    'Baths: 2.5',
+    'Sq Ft: 1,838',
+    'Lot Size: 9,326 Sq Ft',
+    'Year Built: 1976',
+    '📍 Ciudad: Phoenix',
+    'ZIP: 85035',
+  ].join('\r\n'));
+  assert.deepEqual(valores, {
+    precio: '296000', arv: '399999', beds: '3', baths: '2.5', sqft: '1838',
+    lotSize: '9,326 Sq Ft', yearBuilt: '1976', ciudadZona: 'Phoenix, 85035',
+  });
+  assert.deepEqual(revisar, []);
+  assert.equal(arvConMas, true);
+
+  const creation = await request(POST, 'POST', { token: seller, body: {
+    ciudad_zona: valores.ciudadZona,
+    precio: '295000',
+    arv: valores.arv,
+    beds: valores.beds,
+    baths: valores.baths,
+    sqft: valores.sqft,
+    lot_size: valores.lotSize,
+    year_built: valores.yearBuilt,
+    generar_anuncios: false,
+  } });
+  assert.equal(creation.status, 200);
+  const { propiedad } = await creation.json();
+  assert.equal(propiedad.publicada_en, null);
+  const { propiedades } = await (await request(GET, 'GET', { token: seller })).json();
+  const guardada = propiedades.find(({ id }) => id === propiedad.id);
+  assert.equal(guardada.precio, 295000);
+  assert.equal(guardada.ciudad_zona, 'Phoenix, 85035');
+  assert.equal(guardada.direccion_privada, null);
+  assert.equal(guardada.imagen_portada, null);
+});
+
+test('el pegado separa la dirección privada y marca importes ambiguos sin rellenarlos', async () => {
+  const { leerDatosPegados } = await import('../app/admin/datos-pegados.ts');
+  const resultado = leerDatosPegados([
+    'Dirección exacta: 123 W Test St, Phoenix AZ 85035',
+    'Precio: $200,000 a $220,000',
+    'ARV: $300,000',
+    'ARV estimado: $310,000',
+    'Recámaras: 3',
+    'Baños: 2',
+  ].join('\n'));
+  assert.deepEqual(resultado.valores, {
+    direccionPrivada: '123 W Test St, Phoenix AZ 85035', beds: '3', baths: '2',
+  });
+  assert.deepEqual(resultado.revisar, ['precio', 'arv']);
+});
