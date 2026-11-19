@@ -1,3 +1,6 @@
+import type { FotoDrive } from '@/lib/fotos-drive';
+import { identificadorDrive, listarFotosDrive } from '../../drive';
+
 function texto(value: unknown) {
   if (value == null || value === '') return null;
   if (typeof value !== 'string') throw new Error('Hay campos de texto inválidos');
@@ -28,7 +31,22 @@ export function urlPublica(value: unknown) {
   return result;
 }
 
-export function camposFicha(body: Record<string, unknown>) {
+export async function camposFicha(body: Record<string, unknown>) {
+  const driveUrl = urlPublica(body.drive_url);
+  const seleccion = body.fotos_drive_ids ?? [];
+  const portada = body.portada_drive_id ?? null;
+  if (!Array.isArray(seleccion) || !seleccion.every(identificadorDrive)
+    || (portada !== null && (!identificadorDrive(portada) || !seleccion.includes(portada)))) {
+    throw new Error('Revisa la selección de fotos y portada de Drive');
+  }
+  let fotos: FotoDrive[] = [];
+  if (seleccion.length) {
+    if (!driveUrl) throw new Error('Agrega el enlace de la carpeta para guardar las fotos');
+    const disponibles = await listarFotosDrive(driveUrl);
+    const ids = new Set(seleccion);
+    fotos = disponibles.filter((foto) => ids.has(foto.id));
+    if (fotos.length !== ids.size) throw new Error('Algunas fotos ya no están disponibles en esa carpeta');
+  }
   return {
     direccion_privada: texto(body.direccion_privada),
     ciudad_zona: texto(body.ciudad_zona),
@@ -39,7 +57,9 @@ export function camposFicha(body: Record<string, unknown>) {
     sqft: numero(body.sqft),
     lot_size: texto(body.lot_size),
     year_built: numero(body.year_built),
-    drive_url: urlPublica(body.drive_url),
+    drive_url: driveUrl,
+    fotos_drive: fotos,
+    portada_drive_id: portada,
     imagen_portada: urlPublica(body.imagen_portada),
     notas_extra: texto(body.notas_extra),
   };

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@supabase/supabase-js';
+import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
+import { DescargarFotoDrive, SelectorFotosDrive, VistaFotoDrive } from './fotos-drive';
 import { supabaseAdminAuth } from '@/lib/supabase-admin-auth';
 import { camposPegables, leerDatosPegados, type CampoPegable } from './datos-pegados';
 import {
@@ -26,6 +28,8 @@ interface Propiedad {
   sqft: number | null;
   drive_url: string | null;
   imagen_portada: string | null;
+  fotos_drive: FotoDrive[];
+  portada_drive_id: string | null;
   lot_size: string | null;
   year_built: number | null;
   notas_extra: string | null;
@@ -37,7 +41,7 @@ interface Propiedad {
   script_filtro_curiosos: string;
 }
 
-async function solicitar<T>(userId: string, url: string, options: RequestInit = {}): Promise<T> {
+async function respuestaPrivada(userId: string, url: string, options: RequestInit = {}) {
   const { data: { session } } = await supabaseAdminAuth.auth.getSession();
   if (session?.user.id !== userId) {
     throw new Error('La sesión no es válida', { cause: 401 });
@@ -46,10 +50,14 @@ async function solicitar<T>(userId: string, url: string, options: RequestInit = 
   const headers = new Headers(options.headers);
   headers.set('Authorization', `Bearer ${session.access_token}`);
   const response = await fetch(url, { ...options, headers });
-  if (response.ok) return response.json();
+  if (response.ok) return response;
 
   const body = await response.json().catch(() => null);
   throw new Error(body?.error || 'No se pudo completar la operación', { cause: response.status });
+}
+
+async function solicitar<T>(userId: string, url: string, options: RequestInit = {}): Promise<T> {
+  return (await respuestaPrivada(userId, url, options)).json();
 }
 
 export default function AdminPanel() {
@@ -195,9 +203,24 @@ function Inventario({
   const [yearBuilt, setYearBuilt] = useState('');
   const [driveUrl, setDriveUrl] = useState('');
   const [imagenPortada, setImagenPortada] = useState('');
+  const [fotosDrive, setFotosDrive] = useState<FotoDrive[]>([]);
+  const [portadaDrive, setPortadaDrive] = useState<string | null>(null);
+
+  const listarFotos = async (carpeta: string) => {
+    const params = new URLSearchParams({ carpeta });
+    const { fotos } = await solicitar<{ fotos: FotoDrive[] }>(userId, `/api/admin/drive?${params}`);
+    return fotos;
+  };
+
+  const abrirFoto = useCallback(async (foto: FotoDrive, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ foto: foto.id });
+    if (foto.resourceKey) params.set('clave', foto.resourceKey);
+    return (await respuestaPrivada(userId, `/api/admin/drive?${params}`, { signal })).blob();
+  }, [userId]);
   const [notasExtra, setNotasExtra] = useState('');
   const [editando, setEditando] = useState<string | null>(null);
   const [revisando, setRevisando] = useState<string | null>(null);
+  const [portadaCargada, setPortadaCargada] = useState<string | null>(null);
   const [publicando, setPublicando] = useState(false);
   const [bloqueDatos, setBloqueDatos] = useState('');
   const [resultadoPegado, setResultadoPegado] = useState<{
@@ -249,6 +272,8 @@ function Inventario({
     setYearBuilt(String(prop?.year_built ?? ''));
     setDriveUrl(prop?.drive_url ?? '');
     setImagenPortada(prop?.imagen_portada ?? '');
+    setFotosDrive(prop?.fotos_drive ?? []);
+    setPortadaDrive(prop?.portada_drive_id ?? null);
     setNotasExtra(prop?.notas_extra ?? '');
   };
 
@@ -293,6 +318,8 @@ function Inventario({
         year_built: yearBuilt,
         drive_url: driveUrl,
         imagen_portada: imagenPortada,
+        fotos_drive_ids: fotosDrive.map(({ id }) => id),
+        portada_drive_id: portadaDrive,
         notas_extra: notasExtra,
       };
       const generar = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'generar';
@@ -323,6 +350,7 @@ function Inventario({
           id: prop.id,
           accion: 'publicar',
           portada_revisada: prop.imagen_portada,
+          portada_drive_revisada: prop.portada_drive_id,
           carpeta_revisada: prop.drive_url,
         }),
       });
@@ -566,17 +594,46 @@ function Inventario({
               type="url"
               placeholder="Link de Google Drive (fotos/videos)"
               value={driveUrl}
-              onChange={(e) => setDriveUrl(e.target.value)}
+              onChange={(e) => {
+                const enlace = e.target.value;
+                if (enlace.trim() !== driveUrl.trim()) {
+                  setFotosDrive([]);
+                  setPortadaDrive(null);
+                }
+                setDriveUrl(enlace);
+              }}
               className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
             />
             <input
               type="url"
-              placeholder="URL imagen de portada (opcional)"
+              placeholder="URL de portada alternativa"
+              disabled={portadaDrive !== null}
               value={imagenPortada}
               onChange={(e) => setImagenPortada(e.target.value)}
               className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
             />
           </div>
+
+          {driveUrl.trim() && (
+            <SelectorFotosDrive
+              key={`${editando ?? 'nueva'}:${driveUrl.trim()}`}
+              carpeta={driveUrl.trim()}
+              seleccionadas={fotosDrive}
+              portada={portadaDrive}
+              alSeleccionar={(fotos) => {
+                setFotosDrive(fotos);
+                if (!fotos.some(({ id }) => id === portadaDrive)) setPortadaDrive(null);
+              }}
+              alElegirPortada={(foto) => {
+                setPortadaDrive(foto.id);
+                setImagenPortada('');
+                setFotosDrive((seleccion) => seleccion.some(({ id }) => id === foto.id)
+                  ? seleccion : [...seleccion, foto]);
+              }}
+              listar={listarFotos}
+              abrir={abrirFoto}
+            />
+          )}
 
           <textarea
             rows={2}
@@ -612,134 +669,161 @@ function Inventario({
             Inventario ({propiedades.length})
           </h2>
 
-          {propiedades.map((prop) => (
-            <div
-              key={prop.id}
-              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-800 pb-3">
-                <div>
-                  <span className="text-xs uppercase tracking-wider text-amber-400 font-semibold">
-                    {prop.ciudad_zona}
-                  </span>
-                  <h3 className="text-lg font-bold text-zinc-100">
-                    {prop.direccion_privada || 'Ficha sin dirección'}{' '}
-                    <span className="text-xs font-normal text-zinc-500">
-                      (Solo visible aquí)
+          {propiedades.map((prop) => {
+            const fotoPortada = prop.fotos_drive?.find(({ id }) => id === prop.portada_drive_id);
+            const tienePortada = Boolean(fotoPortada || prop.imagen_portada);
+            return (
+              <div
+                key={prop.id}
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-800 pb-3">
+                  <div>
+                    <span className="text-xs uppercase tracking-wider text-amber-400 font-semibold">
+                      {prop.ciudad_zona}
                     </span>
-                  </h3>
-                  <p className="text-sm text-zinc-300">
-                    Precio: <strong>{prop.precio == null ? 'Pendiente' : `$${Number(prop.precio).toLocaleString()}`}</strong>
-                    {prop.arv && ` · ARV: $${Number(prop.arv).toLocaleString()}`}
-                    {prop.beds && ` · ${prop.beds} bd`}
-                    {prop.baths && ` / ${prop.baths} ba`}
-                    {prop.sqft && ` · ${prop.sqft} sqft`}
-                  </p>
-                </div>
+                    <h3 className="text-lg font-bold text-zinc-100">
+                      {prop.direccion_privada || 'Ficha sin dirección'}{' '}
+                      <span className="text-xs font-normal text-zinc-500">
+                        (Solo visible aquí)
+                      </span>
+                    </h3>
+                    <p className="text-sm text-zinc-300">
+                      Precio: <strong>{prop.precio == null ? 'Pendiente' : `$${Number(prop.precio).toLocaleString()}`}</strong>
+                      {prop.arv && ` · ARV: $${Number(prop.arv).toLocaleString()}`}
+                      {prop.beds && ` · ${prop.beds} bd`}
+                      {prop.baths && ` / ${prop.baths} ba`}
+                      {prop.sqft && ` · ${prop.sqft} sqft`}
+                    </p>
+                  </div>
 
-                <div className="flex items-center gap-2">
-                  <select
-                    value={prop.estado}
-                    onChange={(e) => cambiarEstado(prop.id, e.target.value)}
-                    className="bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs"
-                  >
-                    <option value="disponible">Disponible</option>
-                    <option value="en_contrato">En Contrato</option>
-                    <option value="vendida">Vendida</option>
-                  </select>
-                  <button
-                    onClick={() => eliminarPropiedad(prop.id)}
-                    className="p-2 text-zinc-500 hover:text-red-400 cursor-pointer"
-                    title="Eliminar"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {prop.publicada_en ? (
-                <Link href={`/propiedades/${prop.id}`} className="text-sm text-amber-300">
-                  Publicada · Ver ficha
-                </Link>
-              ) : (
-                <div className="space-y-3 text-sm">
-                  <p className="text-zinc-400">Borrador privado</p>
-                  <div className="flex flex-wrap gap-4">
-                    <a href="#formulario-ficha" onClick={() => {
-                      cargarFormulario(prop);
-                      setRevisando(null);
-                    }} className="text-amber-300">Editar borrador</a>
-                    <button type="button"
-                      disabled={!prop.ciudad_zona || !prop.precio || !prop.imagen_portada || editando === prop.id}
-                      onClick={() => setRevisando(prop.id)}
-                      className="text-amber-300 disabled:text-zinc-500">
-                      Revisar portada
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={prop.estado}
+                      onChange={(e) => cambiarEstado(prop.id, e.target.value)}
+                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs"
+                    >
+                      <option value="disponible">Disponible</option>
+                      <option value="en_contrato">En Contrato</option>
+                      <option value="vendida">Vendida</option>
+                    </select>
+                    <button
+                      onClick={() => eliminarPropiedad(prop.id)}
+                      className="p-2 text-zinc-500 hover:text-red-400 cursor-pointer"
+                      title="Eliminar"
+                    >
+                      <Trash2 size={16} />
                     </button>
                   </div>
-                  {(!prop.ciudad_zona || !prop.precio || !prop.imagen_portada) && (
-                    <p className="text-zinc-400">Para publicar, guarda zona, precio y URL de portada.</p>
-                  )}
-                  {revisando === prop.id && prop.imagen_portada && (
-                    <div className="space-y-3">
-                      <p>Abre la portada y comprueba que no muestre la dirección exacta.</p>
-                      <a href={prop.imagen_portada} target="_blank" rel="noopener noreferrer"
-                        className="block text-amber-300">Abrir portada</a>
-                      {prop.drive_url && (
-                        <a href={prop.drive_url} target="_blank" rel="noopener noreferrer"
-                          className="block text-amber-300">Revisar carpeta pública de Drive</a>
-                      )}
-                      <button type="button" disabled={publicando} onClick={() => publicar(prop)}
-                        className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-zinc-950 disabled:opacity-50">
-                        {publicando ? 'Publicando…' : 'Confirmar revisión y publicar'}
+                </div>
+
+                {prop.publicada_en ? (
+                  <Link href={`/propiedades/${prop.id}`} className="text-sm text-amber-300">
+                    Publicada · Ver ficha
+                  </Link>
+                ) : (
+                  <div className="space-y-3 text-sm">
+                    <p className="text-zinc-400">Borrador privado</p>
+                    <div className="flex flex-wrap gap-4">
+                      <a href="#formulario-ficha" onClick={() => {
+                        cargarFormulario(prop);
+                        setRevisando(null);
+                      }} className="text-amber-300">Editar borrador</a>
+                      <button type="button"
+                        disabled={!prop.ciudad_zona || !prop.precio || !tienePortada || editando === prop.id}
+                        onClick={() => {
+                          if (revisando !== prop.id) setPortadaCargada(null);
+                          setRevisando(prop.id);
+                        }}
+                        className="text-amber-300 disabled:text-zinc-500">
+                        Revisar portada
                       </button>
                     </div>
-                  )}
-                </div>
-              )}
-
-              {/* 4 Scripts listos para copiar */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  { key: 'fb_es', label: 'Facebook Español (ITIN / 15%)', text: prop.script_fb_es },
-                  { key: 'fb_en', label: 'Facebook Inglés (Investors)', text: prop.script_fb_en },
-                  { key: 'wa_vip', label: 'Grupo VIP WhatsApp', text: prop.script_wa_vip },
-                  { key: 'filtro', label: 'Respuesta Filtro Curiosos', text: prop.script_filtro_curiosos },
-                ].filter((item) => item.text).map((item) => {
-                  const uniqueId = `${prop.id}-${item.key}`;
-                  return (
-                    <div
-                      key={item.key}
-                      className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 flex flex-col justify-between gap-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-zinc-300">
-                          {item.label}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => copiarTexto(uniqueId, item.text || '')}
-                          className="text-xs bg-zinc-800 hover:bg-zinc-700 px-2.5 py-1 rounded-md flex items-center gap-1 cursor-pointer"
-                        >
-                          {copiadoId === uniqueId ? (
-                            <>
-                              <Check size={13} className="text-emerald-400" /> Copiado
-                            </>
-                          ) : (
-                            <>
-                              <Copy size={13} /> Copiar
-                            </>
-                          )}
+                    {(!prop.ciudad_zona || !prop.precio || !tienePortada) && (
+                      <p className="text-zinc-400">Para publicar, guarda zona, precio y portada.</p>
+                    )}
+                    {revisando === prop.id && tienePortada && (
+                      <div className="space-y-3">
+                        <p>Abre la portada y comprueba que no muestre la dirección exacta.</p>
+                        {fotoPortada ? (
+                          <VistaFotoDrive key={fotoPortada.id} foto={fotoPortada} abrir={abrirFoto}
+                            alCargar={() => setPortadaCargada(fotoPortada.id)} />
+                        ) : prop.imagen_portada && (
+                          <a href={prop.imagen_portada} target="_blank" rel="noopener noreferrer"
+                            className="block text-amber-300">Abrir portada</a>
+                        )}
+                        {prop.drive_url && (
+                          <a href={prop.drive_url} target="_blank" rel="noopener noreferrer"
+                            className="block text-amber-300">Revisar carpeta pública de Drive</a>
+                        )}
+                        <button type="button" disabled={publicando || Boolean(fotoPortada && portadaCargada !== fotoPortada.id)}
+                          onClick={() => publicar(prop)}
+                          className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-zinc-950 disabled:opacity-50">
+                          {publicando ? 'Publicando…' : 'Confirmar revisión y publicar'}
                         </button>
                       </div>
-                      <p className="text-xs text-zinc-400 whitespace-pre-line line-clamp-5">
-                        {item.text}
-                      </p>
-                    </div>
-                  );
-                })}
+                    )}
+                  </div>
+                )}
+
+                {Boolean(prop.fotos_drive?.length) && (
+                  <details className="space-y-2 text-sm">
+                    <summary className="cursor-pointer text-amber-300">Fotos elegidas para Facebook ({prop.fotos_drive.length})</summary>
+                    <ul className="space-y-2">
+                      {prop.fotos_drive.map((foto) => (
+                        <li key={foto.id} className="flex flex-wrap items-center gap-3">
+                          <span className="break-all">{foto.name}</span>
+                          <DescargarFotoDrive foto={foto} abrir={abrirFoto} />
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+
+                {/* 4 Scripts listos para copiar */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {[
+                    { key: 'fb_es', label: 'Facebook Español (ITIN / 15%)', text: prop.script_fb_es },
+                    { key: 'fb_en', label: 'Facebook Inglés (Investors)', text: prop.script_fb_en },
+                    { key: 'wa_vip', label: 'Grupo VIP WhatsApp', text: prop.script_wa_vip },
+                    { key: 'filtro', label: 'Respuesta Filtro Curiosos', text: prop.script_filtro_curiosos },
+                  ].filter((item) => item.text).map((item) => {
+                    const uniqueId = `${prop.id}-${item.key}`;
+                    return (
+                      <div
+                        key={item.key}
+                        className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 flex flex-col justify-between gap-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-zinc-300">
+                            {item.label}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => copiarTexto(uniqueId, item.text || '')}
+                            className="text-xs bg-zinc-800 hover:bg-zinc-700 px-2.5 py-1 rounded-md flex items-center gap-1 cursor-pointer"
+                          >
+                            {copiadoId === uniqueId ? (
+                              <>
+                                <Check size={13} className="text-emerald-400" /> Copiado
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={13} /> Copiar
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <p className="text-xs text-zinc-400 whitespace-pre-line line-clamp-5">
+                          {item.text}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </section>
       </div>
     </main>

@@ -76,3 +76,25 @@ inserción anónima y su listado queda protegido.
 
 Configura `NEXT_PUBLIC_WHATSAPP_ASESOR` como el número del vendedor con código
 de país, solo dígitos. Sin la variable, se conserva el número de prueba.
+
+## Fotos de Google Drive
+
+1. Aplica la migración de publicación de fichas y después ejecuta
+   `supabase/migrations/20261119000400_fotos_drive.sql` en el SQL Editor.
+2. En Drive, comparte la carpeta como **Cualquier persona con el enlace →
+   Lector** y permite las descargas. Pega el enlace completo de la carpeta en
+   el panel, incluido `resourcekey` cuando aparezca. Revisa el nombre de la
+   carpeta, los archivos y las imágenes antes de publicar.
+3. Deja `GOOGLE_DRIVE_API_KEY` sin definir para usar la vista pública de Drive.
+   El selector lee el HTML del primer nivel y abre miniaturas y descargas
+   directamente en Google. Si Drive cambia la vista, el panel informará que
+   no pudo leerla. Comprueba el enlace en una ventana sin sesión de Google.
+
+Si ya tienes una clave y quieres usar la API oficial, habilita **Google Drive
+API**, restringe la clave a esa API y configura `GOOGLE_DRIVE_API_KEY` solo en
+el servidor. [Configuración de claves](https://docs.cloud.google.com/docs/authentication/api-keys).
+
+El selector admite JPEG, PNG, WebP, GIF y AVIF que Drive muestre en el primer
+nivel. **Usar de portada** incluye esa imagen en la selección. Se puede
+descargar cada original desde el selector o la ficha guardada. La ficha pública
+muestra la portada y mantiene el enlace a la carpeta completa.

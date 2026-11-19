@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { CAMPOS_PUBLICOS, enlaceWhatsApp, type PropiedadPublica } from '@/lib/propiedades-publicas';
+import { CAMPOS_PUBLICOS, enlacePortada, enlaceWhatsApp, type PropiedadPublica } from '@/lib/propiedades-publicas';
 import {
   MapPin,
   BedDouble,
@@ -103,6 +103,7 @@ export default function CatalogoPublico() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filtradas.map((prop) => {
+              const portada = enlacePortada(prop);
               return (
                 <article
                   key={prop.id}
@@ -110,9 +111,10 @@ export default function CatalogoPublico() {
                 >
                   <div>
                     <div className="h-44 bg-zinc-800 relative flex items-center justify-center overflow-hidden">
-                      {prop.imagen_portada ? (
+                      {portada ? (
                         <img
-                          src={prop.imagen_portada}
+                          src={portada}
+                          loading="lazy"
                           alt={prop.ciudad_zona}
                           className="w-full h-full object-cover"
                         />

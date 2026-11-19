@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../admin-access';
 
+import { ErrorDrive } from '../drive';
 import { camposFicha } from '../admin/propiedades/campos';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -41,9 +42,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     let ficha;
     try {
-      ficha = camposFicha(body);
+      ficha = await camposFicha(body);
     } catch (error) {
-      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+      return NextResponse.json({ error: (error as Error).message }, { status: error instanceof ErrorDrive ? error.status : 400 });
     }
     const { ciudad_zona, precio, arv, beds, baths, sqft, lot_size, year_built, notas_extra } = ficha;
     const generar = body.generar_anuncios !== false && ciudad_zona && precio && precio > 0;

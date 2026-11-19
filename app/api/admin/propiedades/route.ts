@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ErrorDrive, fotoParaPanel, identificadorDrive } from '../../drive';
 import { camposFicha, urlPublica } from './campos';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
 
@@ -15,7 +16,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ propiedades: data }, {
+  const propiedades = data.map((propiedad) => ({
+    ...propiedad,
+    ...(propiedad.fotos_drive ? { fotos_drive: propiedad.fotos_drive.map(fotoParaPanel) } : {}),
+  }));
+  return NextResponse.json({ propiedades }, {
     headers: { 'Cache-Control': 'private, no-store' },
   });
 }
@@ -32,31 +37,39 @@ export async function PATCH(req: Request) {
 
   if (body.accion === 'guardar_borrador' || body.accion === 'publicar') {
     let cambios;
+    const publicar = body.accion === 'publicar';
     let portada: string | null = null;
+    let portadaDrive: string | null = null;
     let carpeta: string | null = null;
     try {
-      if (body.accion === 'publicar') {
+      if (publicar) {
         portada = urlPublica(body.portada_revisada);
-        if (!portada) throw new Error('Revisa la portada antes de publicar');
+        if (body.portada_drive_revisada != null) {
+          if (!identificadorDrive(body.portada_drive_revisada)) throw new Error('Portada de Drive inválida');
+          portadaDrive = body.portada_drive_revisada;
+        }
+        if (!portada && !portadaDrive) throw new Error('Revisa la portada antes de publicar');
         carpeta = urlPublica(body.carpeta_revisada);
         const ahora = new Date().toISOString();
         cambios = { publicada_en: ahora, ultima_confirmacion: ahora };
       } else {
-        cambios = camposFicha(body.ficha);
+        cambios = await camposFicha(body.ficha);
       }
     } catch (error) {
-      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+      return NextResponse.json({ error: (error as Error).message }, { status: error instanceof ErrorDrive ? error.status : 400 });
     }
 
     let query = supabaseAdmin.from('propiedades').update(cambios)
       .eq('id', id).is('publicada_en', null);
-    if (portada) {
-      query = query.eq('imagen_portada', portada);
+    if (publicar) {
+      query = portadaDrive
+        ? query.eq('portada_drive_id', portadaDrive)
+        : query.is('portada_drive_id', null).eq('imagen_portada', portada!);
       query = carpeta ? query.eq('drive_url', carpeta) : query.is('drive_url', null);
     }
     const { data, error } = await query.select('id').maybeSingle();
 
-    if (error?.code === '23514' && portada) {
+    if (error?.code === '23514' && publicar) {
       return NextResponse.json({ error: 'Completa la zona, un precio mayor que cero y la portada antes de publicar' }, { status: 400 });
     }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

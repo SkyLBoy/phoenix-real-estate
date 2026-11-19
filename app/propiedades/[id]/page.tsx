@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
-import { CAMPOS_PUBLICOS, enlaceWhatsApp } from '@/lib/propiedades-publicas';
+import { CAMPOS_PUBLICOS, enlacePortada, enlaceWhatsApp } from '@/lib/propiedades-publicas';
 import { supabase } from '@/lib/supabase';
 
 async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
@@ -27,7 +27,7 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
             {prop.estado === 'en_contrato' && <p className="text-amber-300">En contrato</p>}
             {/* Las portadas se proporcionan mediante URL de origen variable. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={prop.imagen_portada!} alt={`Portada de propiedad en ${prop.ciudad_zona}`}
+            <img src={enlacePortada(prop) ?? undefined} alt={`Portada de propiedad en ${prop.ciudad_zona}`}
               className="max-h-96 w-full rounded-xl object-cover" />
             <p className="text-xl font-semibold">${Number(prop.precio).toLocaleString()} USD</p>
             {prop.arv != null && <p>ARV estimado: ${Number(prop.arv).toLocaleString()} USD</p>}

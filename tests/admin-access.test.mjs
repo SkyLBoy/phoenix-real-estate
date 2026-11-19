@@ -29,6 +29,7 @@ process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.test';
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
 process.env.GEMINI_API_KEY = 'gemini-test-key';
+process.env.GOOGLE_DRIVE_API_KEY = 'drive-test-key';
 process.env.ADMIN_PIN = 'pin-anterior';
 
 const seller = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -38,6 +39,8 @@ process.env.ADMIN_USER_IDS = `${seller}, ${technician}`;
 
 const properties = new Map();
 const serviceCalls = [];
+const fotoDrive = { id: 'foto-1', name: 'Sala.jpg', resourceKey: 'clave-foto' };
+const carpetaDrive = 'https://drive.google.com/drive/folders/carpeta-1?resourcekey=clave-carpeta';
 const property = { id: 'casa-1', ciudad_zona: 'Phoenix', estado: 'disponible' };
 const scripts = {
   script_fb_es: 'Anuncio de prueba',
@@ -57,6 +60,54 @@ globalThis.fetch = async (input, init) => {
     });
   }
 
+  if (url.hostname === 'drive.google.com' && url.pathname === '/embeddedfolderview') {
+    if (url.searchParams.get('id') === 'restringida') return new Response(null, { status: 403 });
+    if (url.searchParams.get('id') === 'formato-distinto') return new Response('<html><body>Drive</body></html>');
+    assert.equal(url.searchParams.get('id'), 'carpeta-1');
+    assert.equal(url.searchParams.get('resourcekey'), 'clave-carpeta');
+    assert.equal(request.redirect, 'manual');
+    return new Response(`<div class="flip-entries">
+      <div class="flip-entry" id="entry-foto-1">
+        <a href="https://drive.google.com/file/d/foto-1/view?usp=drive_web&amp;resourcekey=clave-foto">
+          <div class="flip-entry-list-icon"><img src="https://drive-thirdparty.googleusercontent.com/16/type/image/jpeg" /></div>
+          <div class="flip-entry-title">Sala &amp; patio.JPG</div>
+        </a>
+      </div>
+      <div class="flip-entry"><a href="/file/d/foto-2/view">
+        <div class="flip-entry-title">Fachada.PNG</div>
+      </a></div>
+      <div class="flip-entry"><a href="/drive/folders/subcarpeta"><div class="flip-entry-title">Lote.jpg</div></a></div>
+      <div class="flip-entry"><a href="https://otro.test/file/d/foto-3/view"><div class="flip-entry-title">Ajena.jpg</div></a></div>
+      <div class="flip-entry"><a href="/file/d/documento/view">
+        <div class="flip-entry-list-icon"><img src="https://drive-thirdparty.googleusercontent.com/16/type/application/pdf" /></div>
+        <div class="flip-entry-title">Falso.jpg</div>
+      </a></div>
+    </div>`);
+  }
+
+  if (url.hostname === 'www.googleapis.com') {
+    assert.equal(url.searchParams.get('key'), 'drive-test-key');
+    if (url.pathname === '/drive/v3/files/foto-1' && url.searchParams.get('alt') === 'media') {
+      assert.equal(request.headers.get('x-goog-drive-resource-keys'), 'foto-1/clave-foto');
+      return new Response('foto de prueba', { headers: { 'Content-Type': 'image/jpeg' } });
+    }
+    assert.equal(request.headers.get('x-goog-drive-resource-keys'), 'carpeta-1/clave-carpeta');
+    if (url.pathname === '/drive/v3/files/carpeta-1') {
+      return Response.json({ mimeType: 'application/vnd.google-apps.folder' });
+    }
+    if (url.pathname === '/drive/v3/files') {
+      assert.match(url.searchParams.get('q'), /'carpeta-1' in parents/);
+      if (!url.searchParams.has('pageToken')) {
+        return Response.json({ nextPageToken: 'p2', files: [
+          { id: 'svg', name: 'SVG', mimeType: 'image/svg+xml' },
+          { id: 'no-descarga', name: 'No.jpg', mimeType: 'image/jpeg', capabilities: { canDownload: false } },
+        ] });
+      }
+      assert.equal(url.searchParams.get('pageToken'), 'p2');
+      return Response.json({ files: [{ ...fotoDrive, mimeType: 'image/jpeg' }] });
+    }
+  }
+
   if (url.hostname === 'supabase.test' && url.pathname === '/auth/v1/user') {
     const id = request.headers.get('authorization')?.match(/^Bearer (.*)$/)?.[1];
     if ([seller, technician, outsider].includes(id)) return Response.json({ id });
@@ -65,8 +116,15 @@ globalThis.fetch = async (input, init) => {
 
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades') {
     switch (request.method) {
-      case 'GET':
+      case 'GET': {
+        if (url.searchParams.get('select') === 'fotos_drive,portada_drive_id') {
+          assert.equal(url.searchParams.get('publicada_en'), 'not.is.null');
+          assert.equal(url.searchParams.get('estado'), 'neq.vendida');
+          const ficha = properties.get(url.searchParams.get('id').slice(3));
+          return Response.json(ficha?.publicada_en && ficha.estado !== 'vendida' ? [ficha] : []);
+        }
         return Response.json([...properties.values()]);
+      }
       case 'POST': {
         const [body] = await request.json();
         const created = { ...body, id: 'casa-2', estado: 'disponible' };
@@ -76,7 +134,7 @@ globalThis.fetch = async (input, init) => {
       case 'PATCH': {
         const id = url.searchParams.get('id').slice(3);
         const existing = properties.get(id);
-        const filters = ['imagen_portada', 'drive_url'];
+        const filters = ['imagen_portada', 'drive_url', 'portada_drive_id'];
         if (!existing || (url.searchParams.has('publicada_en') && existing.publicada_en !== null)
           || filters.some((field) => {
             const filter = url.searchParams.get(field);
@@ -103,6 +161,8 @@ globalThis.fetch = async (input, init) => {
 
 const { GET, PATCH, DELETE } = await import('../app/api/admin/propiedades/route.ts');
 const { POST } = await import('../app/api/procesar-propiedad/route.ts');
+const { GET: DRIVE } = await import('../app/api/admin/drive/route.ts');
+const { GET: PORTADA } = await import('../app/api/propiedades/[id]/portada/route.ts');
 
 function request(handler, method, { token, query = '', body } = {}) {
   const path = method === 'POST' ? '/api/procesar-propiedad' : '/api/admin/propiedades';
@@ -284,4 +344,110 @@ test('el pegado separa la dirección privada y marca importes ambiguos sin relle
     direccionPrivada: '123 W Test St, Phoenix AZ 85035', beds: '3', baths: '2',
   });
   assert.deepEqual(resultado.revisar, ['precio', 'arv']);
+});
+
+
+test('Drive lista fotos compatibles, guarda la selección y sirve la portada solo tras publicar', async () => {
+  function drive(params, token) {
+    return DRIVE(new Request(`https://panel.test/api/admin/drive?${new URLSearchParams(params)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }));
+  }
+
+  const start = serviceCalls.length;
+  assert.equal((await drive({ carpeta: carpetaDrive })).status, 401);
+  assert.deepEqual(serviceCalls.slice(start), []);
+  assert.equal((await drive({ carpeta: 'https://otro.test/drive/folders/carpeta-1' }, seller)).status, 400);
+  const listado = await drive({ carpeta: carpetaDrive }, seller);
+  assert.equal(listado.status, 200);
+  assert.deepEqual(await listado.json(), { fotos: [fotoDrive] });
+
+  const descarga = await drive({ foto: fotoDrive.id, clave: fotoDrive.resourceKey }, seller);
+  assert.equal(descarga.headers.get('content-type'), 'image/jpeg');
+  assert.equal(await descarga.text(), 'foto de prueba');
+
+  const ficha = { ciudad_zona: 'Phoenix', precio: 250000, drive_url: carpetaDrive, generar_anuncios: false };
+  const externa = await request(POST, 'POST', { token: seller, body: {
+    ...ficha, fotos_drive_ids: ['externa'], portada_drive_id: 'externa',
+  } });
+  assert.equal(externa.status, 400);
+
+  const guardado = await request(POST, 'POST', { token: seller, body: {
+    ...ficha, fotos_drive_ids: [fotoDrive.id], portada_drive_id: fotoDrive.id,
+  } });
+  assert.equal(guardado.status, 200);
+  const { propiedad } = await guardado.json();
+  assert.deepEqual(propiedad.fotos_drive, [fotoDrive]);
+  assert.equal(propiedad.portada_drive_id, fotoDrive.id);
+  assert.equal(propiedad.imagen_portada, null);
+
+  function portadaPublica() {
+    return PORTADA(new Request('https://panel.test/api/propiedades/casa-2/portada'), {
+      params: Promise.resolve({ id: propiedad.id }),
+    });
+  }
+  assert.equal((await portadaPublica()).status, 404);
+
+  const publicacion = await request(PATCH, 'PATCH', { token: seller, body: {
+    id: propiedad.id, accion: 'publicar', portada_drive_revisada: fotoDrive.id, carpeta_revisada: carpetaDrive,
+  } });
+  assert.equal(publicacion.status, 200);
+  const portada = await portadaPublica();
+  assert.equal(portada.status, 200);
+  assert.equal(await portada.text(), 'foto de prueba');
+});
+
+
+test('sin clave, el panel lee Drive público y conserva las descargas y portadas directas', async () => {
+  const clave = process.env.GOOGLE_DRIVE_API_KEY;
+  delete process.env.GOOGLE_DRIVE_API_KEY;
+  try {
+    const listar = (carpeta) => DRIVE(new Request(
+      `https://panel.test/api/admin/drive?${new URLSearchParams({ carpeta })}`,
+      { headers: { Authorization: `Bearer ${seller}` } },
+    ));
+    const embebido = 'https://drive.google.com/embeddedfolderview?id=carpeta-1&resourcekey=clave-carpeta#grid';
+    const resultado = await listar(embebido);
+    assert.equal(resultado.status, 200);
+    const { fotos } = await resultado.json();
+    assert.deepEqual(fotos, [
+      {
+        id: 'foto-1', name: 'Sala & patio.JPG', resourceKey: 'clave-foto',
+        miniaturaUrl: 'https://lh3.googleusercontent.com/d/foto-1?resourcekey=clave-foto',
+        descargaUrl: 'https://drive.google.com/uc?export=download&id=foto-1&resourcekey=clave-foto',
+      },
+      {
+        id: 'foto-2', name: 'Fachada.PNG',
+        miniaturaUrl: 'https://lh3.googleusercontent.com/d/foto-2',
+        descargaUrl: 'https://drive.google.com/uc?export=download&id=foto-2',
+      },
+    ]);
+    assert.deepEqual(await (await listar(carpetaDrive)).json(), { fotos });
+    assert.equal((await listar('https://drive.google.com/drive/folders/restringida')).status, 422);
+    assert.equal((await listar('https://drive.google.com/drive/folders/formato-distinto')).status, 422);
+
+    const guardado = await request(POST, 'POST', { token: seller, body: {
+      ciudad_zona: 'Phoenix', precio: 250000, drive_url: embebido,
+      generar_anuncios: false, fotos_drive_ids: ['foto-2'], portada_drive_id: 'foto-2',
+    } });
+    assert.equal(guardado.status, 200);
+    const { propiedad } = await guardado.json();
+    assert.deepEqual(propiedad.fotos_drive, [{ id: 'foto-2', name: 'Fachada.PNG' }]);
+    const inventario = await request(GET, 'GET', { token: seller });
+    assert.deepEqual((await inventario.json()).propiedades.find(({ id }) => id === propiedad.id).fotos_drive, [fotos[1]]);
+
+    const portada = () => PORTADA(new Request('https://panel.test/api/propiedades/casa-2/portada'), {
+      params: Promise.resolve({ id: propiedad.id }),
+    });
+    assert.equal((await portada()).status, 404);
+    const publicado = await request(PATCH, 'PATCH', { token: seller, body: {
+      id: propiedad.id, accion: 'publicar', portada_drive_revisada: 'foto-2', carpeta_revisada: embebido,
+    } });
+    assert.equal(publicado.status, 200);
+    const respuesta = await portada();
+    assert.equal(respuesta.status, 302);
+    assert.equal(respuesta.headers.get('location'), fotos[1].miniaturaUrl);
+  } finally {
+    process.env.GOOGLE_DRIVE_API_KEY = clave;
+  }
 });
