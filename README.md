@@ -136,3 +136,14 @@ en una ficha publicada. El catálogo y los avisos preparados después usan el
 importe actualizado, con el mismo enlace de ficha. Los cuatro textos conservan
 su contenido y vuelven a revisión cuando cambia el precio. Aprueba de nuevo
 cada texto antes de copiarlo como final.
+
+## Compradores VIP
+
+Ejecuta `supabase/migrations/20261119000900_permisos_compradores_vip.sql`
+después de las migraciones anteriores, al actualizar la aplicación. La
+migración bloquea el acceso directo del navegador a la tabla. El formulario
+público de esta versión registra a los compradores mediante el servidor.
+
+En `/admin`, pulsa **Ver compradores** y usa **Abrir WhatsApp** para dar
+seguimiento manual. Los números locales de diez dígitos usan el código de
+EE. UU. (+1). Para otros países, incluye el signo + y el código de país.

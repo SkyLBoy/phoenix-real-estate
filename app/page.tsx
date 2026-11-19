@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import type { PerfilVip } from '@/lib/compradores-vip';
 import { etiquetaDisponibilidad } from '@/lib/disponibilidad';
 import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import { supabase } from '@/lib/supabase';
@@ -26,9 +27,11 @@ export default function CatalogoPublico() {
   // Formulario de registro VIP
   const [nombre, setNombre] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
-  const [perfil, setPerfil] = useState<'familia_vivienda' | 'inversionista'>('familia_vivienda');
+  const [perfil, setPerfil] = useState<PerfilVip>('familia_vivienda');
   const [tieneItin, setTieneItin] = useState(false);
   const [leadEnviado, setLeadEnviado] = useState(false);
+  const [enviandoLead, setEnviandoLead] = useState(false);
+  const [errorLead, setErrorLead] = useState('');
 
   useEffect(() => {
     const cargar = async () => {
@@ -46,18 +49,23 @@ export default function CatalogoPublico() {
 
   const registrarLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { error } = await supabase.from('leads_compradores').insert([
-      {
-        nombre,
-        whatsapp,
-        perfil,
-        tiene_itin: tieneItin,
-      },
-    ]);
-    if (!error) {
+    setEnviandoLead(true);
+    setErrorLead('');
+    try {
+      const respuesta = await fetch('/api/compradores-vip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, whatsapp, perfil, tiene_itin: tieneItin }),
+      });
+      if (!respuesta.ok) {
+        const detalle = await respuesta.json().catch(() => null);
+        throw new Error(detalle?.error || 'No se pudo guardar el registro.');
+      }
       setLeadEnviado(true);
-      setNombre('');
-      setWhatsapp('');
+    } catch (fallo) {
+      setErrorLead(fallo instanceof Error ? fallo.message : 'No se pudo guardar el registro.');
+    } finally {
+      setEnviandoLead(false);
     }
   };
 
@@ -208,7 +216,7 @@ export default function CatalogoPublico() {
             Recibe las casas nuevas antes que en Facebook
           </h2>
           <p className="text-sm text-zinc-400">
-            Déjanos tu WhatsApp y te enviamos las oportunidades directo en cuanto entran.
+            Registro opcional. Al inscribirte, aceptas que el vendedor te contacte por WhatsApp con oportunidades inmobiliarias.
           </p>
 
           {leadEnviado ? (
@@ -220,6 +228,9 @@ export default function CatalogoPublico() {
             <form onSubmit={registrarLead} className="space-y-3">
               <input
                 type="text"
+                aria-label="Tu nombre completo"
+                autoComplete="name"
+                maxLength={120}
                 placeholder="Tu nombre completo"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
@@ -228,6 +239,9 @@ export default function CatalogoPublico() {
               />
               <input
                 type="tel"
+                aria-label="Tu número de WhatsApp"
+                autoComplete="tel"
+                maxLength={40}
                 placeholder="Tu número de WhatsApp (ej. 602-555-1234)"
                 value={whatsapp}
                 onChange={(e) => setWhatsapp(e.target.value)}
@@ -235,9 +249,10 @@ export default function CatalogoPublico() {
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
               />
               <select
+                aria-label="Perfil de comprador"
                 value={perfil}
                 onChange={(e) =>
-                  setPerfil(e.target.value as 'familia_vivienda' | 'inversionista')
+                  setPerfil(e.target.value as PerfilVip)
                 }
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
               >
@@ -253,11 +268,13 @@ export default function CatalogoPublico() {
                 />
                 Cuento con ITIN / Pasaporte o enganche listo
               </label>
+              {errorLead && <p role="alert" className="text-sm text-red-300">{errorLead}</p>}
               <button
                 type="submit"
+                disabled={enviandoLead}
                 className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold py-2.5 rounded-lg text-sm transition cursor-pointer"
               >
-                Unirme a la Lista Prioritaria
+                {enviandoLead ? 'Guardando…' : 'Unirme a la Lista Prioritaria'}
               </button>
             </form>
           )}

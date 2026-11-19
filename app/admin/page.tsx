@@ -7,6 +7,7 @@ import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
 import { etiquetaDisponibilidad, type EstadoDisponibilidad } from '@/lib/disponibilidad';
 import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import type { TextosFicha } from '@/lib/textos-propiedad';
+import { CompradoresVip } from './compradores-vip';
 import { CorregirPrecio } from './corregir-precio';
 import { AvisoWhatsApp, CopiarEnlaceFicha } from './aviso-whatsapp';
 import { TextosDeFicha } from './textos-ficha';
@@ -472,6 +473,8 @@ function Inventario({
         )}
 
         <AvisoWhatsApp key={revisionAviso} ahora={ahora} />
+
+        <CompradoresVip cargar={(pagina) => solicitar(userId, `/api/admin/compradores-vip?pagina=${pagina}`)} />
 
         {/* Formulario de Ingesta */}
         <form

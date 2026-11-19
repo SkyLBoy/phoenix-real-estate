@@ -38,6 +38,7 @@ const outsider = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 process.env.ADMIN_USER_IDS = `${seller}, ${technician}`;
 
 const properties = new Map();
+const compradores = [];
 const serviceCalls = [];
 const entradasGemini = [];
 let simularGeminiInvalido = false;
@@ -116,6 +117,19 @@ globalThis.fetch = async (input, init) => {
     const id = request.headers.get('authorization')?.match(/^Bearer (.*)$/)?.[1];
     if ([seller, technician, outsider].includes(id)) return Response.json({ id });
     return Response.json({ message: 'Invalid token' }, { status: 401 });
+  }
+
+  if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/leads_compradores') {
+    assert.equal(request.headers.get('authorization'), 'Bearer service-role-key');
+    if (request.method === 'POST') {
+      const comprador = await request.json();
+      compradores.unshift({ id: compradores.length + 1, ...comprador });
+      return new Response(null, { status: 201 });
+    }
+    assert.equal(url.searchParams.get('select'), 'id,nombre,whatsapp,perfil,tiene_itin');
+    assert.equal(url.searchParams.get('order'), 'created_at.desc.nullslast,id.desc');
+    const offset = Number(url.searchParams.get('offset'));
+    return Response.json(compradores.slice(offset, offset + Number(url.searchParams.get('limit'))));
   }
 
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades_publicas') {
@@ -677,4 +691,42 @@ test('corregir el precio actualiza una ficha publicada y los avisos posteriores'
   const aviso = prepararAvisoWhatsApp(fichas, 'https://catalogo.test', Date.parse('2026-11-19T19:00:00Z'));
   assert.ok(aviso.includes('Scottsdale 85251 — $215,500.25 USD'));
   assert.ok(!aviso.includes('Scottsdale 85251 — $200,000 USD'));
+});
+
+
+test('el registro VIP es público y solo el operador autorizado puede consultar el teléfono', async () => {
+  const { POST: registrar } = await import('../app/api/compradores-vip/route.ts');
+  const { GET: listar } = await import('../app/api/admin/compradores-vip/route.ts');
+  const { chatComprador } = await import('../lib/compradores-vip.ts');
+  const registro = { nombre: '  Comprador de prueba  ', whatsapp: '(602) 555-0123', perfil: 'inversionista', tiene_itin: true };
+
+  const publicar = (body) => registrar(new Request('https://panel.test/api/compradores-vip', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }));
+  const consultar = (token, pagina = '') => listar(new Request(`https://panel.test/api/admin/compradores-vip${pagina}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }));
+
+  assert.equal((await publicar({ ...registro, whatsapp: 'https://example.test' })).status, 400);
+  assert.equal((await publicar({ ...registro, perfil: 'otro' })).status, 400);
+  const resultado = await publicar({ ...registro, campo_ajeno: 'ignorar' });
+  assert.equal(resultado.status, 201);
+  assert.deepEqual(await resultado.json(), { ok: true });
+
+  const inicio = serviceCalls.length;
+  assert.equal((await consultar()).status, 401);
+  assert.equal((await consultar(outsider)).status, 403);
+  assert.deepEqual(serviceCalls.slice(inicio), ['/auth/v1/user']);
+  assert.equal((await consultar(seller, '?pagina=-1')).status, 400);
+  const lista = await consultar(seller);
+  assert.match(lista.headers.get('cache-control'), /private, no-store/);
+  const datos = await lista.json();
+  assert.deepEqual(datos, {
+    compradores: [{ id: 1, nombre: 'Comprador de prueba', whatsapp: '+16025550123', perfil: 'inversionista', tiene_itin: true }],
+    hayMas: false,
+  });
+  assert.equal(chatComprador(datos.compradores[0].whatsapp), 'https://wa.me/16025550123');
+  assert.equal(chatComprador('+52 (662) 123-4567'), 'https://wa.me/526621234567');
+  assert.equal(chatComprador('602-555-0123'), 'https://wa.me/16025550123');
+  assert.equal(chatComprador('dato inválido'), null);
 });
