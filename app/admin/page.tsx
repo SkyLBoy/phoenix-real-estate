@@ -5,13 +5,16 @@ import Link from 'next/link';
 import type { Session } from '@supabase/supabase-js';
 import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
 import { etiquetaDisponibilidad, type EstadoDisponibilidad } from '@/lib/disponibilidad';
+import { esZonaPublica } from '@/lib/zona-publica';
+import { ColaDisponibilidad, type PaginaPendientes } from './cola-disponibilidad';
 import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import { requisitosTextos, type TextosFicha } from '@/lib/textos-propiedad';
+import { CasasOfrecidas } from './casas-ofrecidas';
 import { CompradoresVip } from './compradores-vip';
 import { CorregirPrecio } from './corregir-precio';
 import { AvisoWhatsApp, CopiarEnlaceFicha } from './aviso-whatsapp';
 import { TextosDeFicha } from './textos-ficha';
-import { DescargarFotoDrive, SelectorFotosDrive, VistaFotoDrive } from './fotos-drive';
+import { DescargarFotoDrive, DescargarSeleccionDrive, SelectorFotosDrive, VistaFotoDrive } from './fotos-drive';
 import { supabaseAdminAuth } from '@/lib/supabase-admin-auth';
 import { camposPegables, leerDatosPegados, type CampoPegable } from './datos-pegados';
 import {
@@ -221,11 +224,17 @@ function Inventario({
     if (foto.resourceKey) params.set('clave', foto.resourceKey);
     return (await respuestaPrivada(userId, `/api/admin/drive?${params}`, { signal })).blob();
   }, [userId]);
+  const abrirOriginal = async (foto: FotoDrive) => {
+    const params = new URLSearchParams({ foto: foto.id, original: '1' });
+    if (foto.resourceKey) params.set('clave', foto.resourceKey);
+    return (await respuestaPrivada(userId, `/api/admin/drive?${params}`)).blob();
+  };
   const [notasExtra, setNotasExtra] = useState('');
   const [editando, setEditando] = useState<string | null>(null);
   const [revisando, setRevisando] = useState<string | null>(null);
   const [portadaCargada, setPortadaCargada] = useState<string | null>(null);
   const [publicando, setPublicando] = useState(false);
+  const [confirmarAlPublicar, setConfirmarAlPublicar] = useState(false);
   const [bloqueDatos, setBloqueDatos] = useState('');
   const [resultadoPegado, setResultadoPegado] = useState<{
     reconocidos: CampoPegable[];
@@ -290,20 +299,32 @@ function Inventario({
 
   const [intentoCarga, setIntentoCarga] = useState(0);
   const [revisionAviso, setRevisionAviso] = useState(0);
+  const [paginaInventario, setPaginaInventario] = useState(0);
+  const [hayMasInventario, setHayMasInventario] = useState(false);
+  const [paginaCargada, setPaginaCargada] = useState(0);
+  const cargarPendientes = useCallback((pagina: number, signal: AbortSignal) =>
+    solicitar<PaginaPendientes>(userId, `/api/admin/propiedades?vista=por_confirmar&pagina=${pagina}`, { signal }), [userId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    solicitar<{ propiedades: Propiedad[] }>(userId, '/api/admin/propiedades', {
+    solicitar<{ propiedades: Propiedad[]; hayMas: boolean }>(userId, `/api/admin/propiedades?pagina=${paginaInventario}`, {
       signal: controller.signal,
     })
-      .then(({ propiedades }) => {
-        if (!controller.signal.aborted) setPropiedades(propiedades);
+      .then(({ propiedades, hayMas }) => {
+        if (controller.signal.aborted) return;
+        if (!propiedades.length && paginaInventario > 0) {
+          setPaginaInventario(paginaInventario - 1);
+          return;
+        }
+        setPropiedades(propiedades);
+        setHayMasInventario(hayMas);
+        setPaginaCargada(paginaInventario);
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) mostrarError(error, 'No se pudo cargar el inventario');
       });
     return () => controller.abort();
-  }, [intentoCarga, mostrarError, userId]);
+  }, [intentoCarga, mostrarError, userId, paginaInventario]);
 
   const procesarPropiedad = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -334,6 +355,7 @@ function Inventario({
           ? { id: editando, accion: 'guardar_borrador', ficha }
           : { ...ficha, generar_anuncios: false }),
       });
+      if (!editando) setPaginaInventario(0);
       setIntentoCarga((intento) => intento + 1);
       cargarFormulario();
     } catch (error) {
@@ -353,6 +375,8 @@ function Inventario({
         body: JSON.stringify({
           id: prop.id,
           accion: 'publicar',
+          zona_revisada: prop.ciudad_zona,
+          confirmar_disponibilidad: confirmarAlPublicar,
           portada_revisada: prop.imagen_portada,
           portada_drive_revisada: prop.portada_drive_id,
           carpeta_revisada: prop.drive_url,
@@ -451,7 +475,7 @@ function Inventario({
         <header className="admin-header flex flex-wrap items-center justify-between gap-5 p-5 md:p-7">
           <div>
             <p className="admin-brand">Sergio Orantes | House FixAndFlip</p>
-            <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight md:text-3xl">
+            <h1 className="editorial-title mt-1 flex items-center gap-2 text-3xl md:text-4xl">
               <Building2 className="shrink-0 text-white" /> Panel de propiedades
             </h1>
             <p className="admin-subtitle mt-2 text-sm">
@@ -474,15 +498,32 @@ function Inventario({
           <p role="alert" className="text-sm text-red-300">{errorSesion || errorOperacion}</p>
         )}
 
-        <AvisoWhatsApp key={revisionAviso} ahora={ahora} />
+        <nav className="admin-nav" aria-label="Secciones del panel">
+          <a href="#inventario-admin">Inventario</a>
+          <a href="#formulario-ficha">Nueva ficha</a>
+          <a href="#aviso-admin">Aviso diario</a>
+          <a href="#vip-admin">Compradores VIP</a>
+          <a href="#casas-ofrecidas-admin">Casas ofrecidas</a>
+        </nav>
 
-        <CompradoresVip cargar={(pagina) => solicitar(userId, `/api/admin/compradores-vip?pagina=${pagina}`)} />
+        <div id="aviso-admin" data-admin-seccion>
+          <AvisoWhatsApp key={revisionAviso} ahora={ahora} />
+        </div>
+
+        <div id="vip-admin" data-admin-seccion>
+          <CompradoresVip cargar={(pagina) => solicitar(userId, `/api/admin/compradores-vip?pagina=${pagina}`)} />
+        </div>
+
+        <div id="casas-ofrecidas-admin" data-admin-seccion>
+          <CasasOfrecidas solicitar={(opciones, pagina = 0) =>
+            solicitar(userId, `/api/admin/casas-ofrecidas?pagina=${pagina}`, opciones)} />
+        </div>
 
         {/* Formulario de Ingesta */}
         <form
-          id="formulario-ficha"
+          id="formulario-ficha" data-admin-seccion
           onSubmit={procesarPropiedad}
-          className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4"
+          className="inventario-ficha space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5"
         >
           <h2 className="font-semibold text-amber-400 flex items-center gap-2">
             <Sparkles size={18} /> {editando ? 'Editar borrador' : 'Nueva propiedad'}
@@ -534,6 +575,7 @@ function Inventario({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <input
               type="text"
+              aria-label="Dirección exacta"
               placeholder="Dirección exacta (PRIVADA - Ej: 4512 W McDowell Rd)"
               value={direccionPrivada}
               onChange={(e) => setDireccionPrivada(e.target.value)}
@@ -541,6 +583,7 @@ function Inventario({
             />
             <input
               type="text"
+              aria-label="Zona pública"
               placeholder="Zona pública (Ej: Phoenix, AZ 85035)"
               value={ciudadZona}
               onChange={(e) => setCiudadZona(e.target.value)}
@@ -552,6 +595,7 @@ function Inventario({
             <input
               type="number"
               step="0.01"
+              aria-label="Precio"
               placeholder="Precio ($ USD)"
               value={precio}
               onChange={(e) => setPrecio(e.target.value)}
@@ -560,6 +604,7 @@ function Inventario({
             <input
               type="number"
               step="0.01"
+              aria-label="ARV"
               placeholder="ARV ($ opcional)"
               value={arv}
               onChange={(e) => setArv(e.target.value)}
@@ -567,6 +612,7 @@ function Inventario({
             />
             <input
               type="number"
+              aria-label="Recámaras"
               placeholder="Recámaras (Beds)"
               value={beds}
               onChange={(e) => setBeds(e.target.value)}
@@ -575,6 +621,7 @@ function Inventario({
             <input
               type="number"
               step="any"
+              aria-label="Baños"
               placeholder="Baños (Baths)"
               value={baths}
               onChange={(e) => setBaths(e.target.value)}
@@ -585,6 +632,7 @@ function Inventario({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <input
               type="number"
+              aria-label="Sqft"
               placeholder="Sqft"
               value={sqft}
               onChange={(e) => setSqft(e.target.value)}
@@ -592,6 +640,7 @@ function Inventario({
             />
             <input
               type="text"
+              aria-label="Lot Size"
               placeholder="Lot Size (Ej: 6,500 sqft)"
               value={lotSize}
               onChange={(e) => setLotSize(e.target.value)}
@@ -599,6 +648,7 @@ function Inventario({
             />
             <input
               type="number"
+              aria-label="Año construcción"
               placeholder="Año construcción"
               value={yearBuilt}
               onChange={(e) => setYearBuilt(e.target.value)}
@@ -609,6 +659,7 @@ function Inventario({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <input
               type="url"
+              aria-label="Link de Google Drive"
               placeholder="Link de Google Drive (fotos/videos)"
               value={driveUrl}
               onChange={(e) => {
@@ -623,6 +674,7 @@ function Inventario({
             />
             <input
               type="url"
+              aria-label="URL de portada alternativa"
               placeholder="URL de portada alternativa"
               disabled={portadaDrive !== null}
               value={imagenPortada}
@@ -649,11 +701,13 @@ function Inventario({
               }}
               listar={listarFotos}
               abrir={abrirFoto}
+              abrirOriginal={abrirOriginal}
             />
           )}
 
           <textarea
             rows={2}
+            aria-label="Notas extra o condiciones"
             placeholder="Notas extra o condiciones (Ej: Techo nuevo, piscina, ocupa remodelación ligera, cierre en 10 días...)"
             value={notasExtra}
             onChange={(e) => setNotasExtra(e.target.value)}
@@ -676,16 +730,20 @@ function Inventario({
         </form>
 
         {/* Lista de Propiedades y Scripts */}
-        <section className="space-y-6">
-          <h2 className="text-lg font-semibold">
-            Inventario ({propiedades.length})
+        <section id="inventario-admin" data-admin-seccion className="space-y-4">
+          <h2 className="editorial-title text-2xl">
+            Inventario
           </h2>
+          <ColaDisponibilidad key={revisionAviso} cargar={cargarPendientes} actualizar={cambiarEstado}
+            ocupadas={cambiosDisponibilidad} ahora={ahora} />
+          <h3 className="text-lg font-semibold">Todas las fichas</h3>
+          {propiedades.length === 0 && <p>Todavía no hay fichas en el inventario.</p>}
 
           {propiedades.map((prop) => {
             const fotoPortada = prop.fotos_drive?.find(({ id }) => id === prop.portada_drive_id);
             const tienePortada = Boolean(fotoPortada || prop.imagen_portada);
             const faltantesPublicacion = [
-              !prop.ciudad_zona?.trim() && 'zona pública',
+              !esZonaPublica(prop.ciudad_zona) && 'la ciudad o ZIP en la zona pública',
               !(Number(prop.precio) > 0) && 'precio mayor que cero',
               !tienePortada && 'portada',
             ].filter(Boolean);
@@ -698,7 +756,7 @@ function Inventario({
             return (
               <div
                 key={prop.id}
-                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4"
+                className="inventario-ficha space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5"
               >
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-800 pb-3">
                   <div>
@@ -723,7 +781,8 @@ function Inventario({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => eliminarPropiedad(prop.id)}
-                      className="p-2 text-zinc-500 hover:text-red-400 cursor-pointer"
+                      className="min-w-11 p-2 text-zinc-500 hover:text-red-400 cursor-pointer"
+                      aria-label="Eliminar propiedad"
                       title="Eliminar"
                     >
                       <Trash2 size={16} />
@@ -787,14 +846,28 @@ function Inventario({
                       <button type="button"
                         disabled={!puedeRevisar}
                         onClick={() => {
-                          if (revisando !== prop.id) setPortadaCargada(null);
+                          if (revisando !== prop.id) {
+                            setPortadaCargada(null);
+                            setConfirmarAlPublicar(false);
+                          }
                           setRevisando(prop.id);
                         }}
                         className="text-amber-300 disabled:text-zinc-500">
-                        Revisar portada
+                        Revisar ficha y portada
                       </button>
                     </div>
                     <div className="space-y-2 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
+                      {revisandoFicha && puedeRevisar && <div className="space-y-2">
+                        <p>Así se verá la ubicación en el catálogo: <strong>{prop.ciudad_zona}</strong></p>
+                        {prop.estado === 'disponible' && <label className="flex min-h-11 cursor-pointer items-center gap-2">
+                          <input type="checkbox" checked={confirmarAlPublicar}
+                            onChange={(e) => setConfirmarAlPublicar(e.target.checked)} />
+                          Acabo de confirmar que sigue disponible
+                        </label>}
+                        <p aria-live="polite">Estado al publicar: <strong>
+                          {confirmarAlPublicar && prop.estado === 'disponible' ? 'Disponible' : etiqueta}
+                        </strong></p>
+                      </div>}
                       <button type="button"
                         disabled={publicando || !puedeRevisar || !revisandoFicha || portadaPendiente}
                         aria-describedby={`estado-publicacion-${prop.id}`}
@@ -806,7 +879,7 @@ function Inventario({
                         {faltantesPublicacion.length
                           ? `Completa y guarda: ${faltantesPublicacion.join(', ')}.`
                           : editando === prop.id ? 'Guarda los cambios del borrador para publicar.'
-                          : !revisandoFicha ? 'Pulsa Revisar portada para habilitar la publicación.'
+                          : !revisandoFicha ? 'Pulsa Revisar ficha y portada para habilitar la publicación.'
                           : portadaPendiente ? 'La portada debe cargar para que puedas revisarla.'
                           : 'Revisa que la portada y la carpeta pública oculten la dirección exacta.'}
                       </p>
@@ -833,6 +906,7 @@ function Inventario({
                 {Boolean(prop.fotos_drive?.length) && (
                   <details className="space-y-2 text-sm">
                     <summary className="cursor-pointer text-amber-300">Fotos elegidas para Facebook ({prop.fotos_drive.length})</summary>
+                    <DescargarSeleccionDrive fotos={prop.fotos_drive} abrirOriginal={abrirOriginal} />
                     <ul className="space-y-2">
                       {prop.fotos_drive.map((foto) => (
                         <li key={foto.id} className="flex flex-wrap items-center gap-3">
@@ -867,6 +941,13 @@ function Inventario({
               </div>
             );
           })}
+          {(paginaCargada > 0 || hayMasInventario) && <nav aria-label="Páginas del inventario" className="flex items-center gap-3">
+            <button type="button" className="min-h-11 rounded-lg px-3" disabled={paginaCargada === 0}
+              onClick={() => { setPaginaInventario(paginaCargada - 1); setIntentoCarga((n) => n + 1); }}>Anterior</button>
+            <span>Página {paginaCargada + 1}</span>
+            <button type="button" className="min-h-11 rounded-lg px-3" disabled={!hayMasInventario}
+              onClick={() => { setPaginaInventario(paginaCargada + 1); setIntentoCarga((n) => n + 1); }}>Siguiente</button>
+          </nav>}
         </section>
       </div>
     </main>

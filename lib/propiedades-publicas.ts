@@ -1,4 +1,5 @@
 import type { EstadoDisponibilidad } from './disponibilidad';
+import { numeroWhatsAppAsesor } from './whatsapp-asesor.mjs';
 
 export interface PropiedadPublica {
   id: string;
@@ -21,8 +22,12 @@ export const CAMPOS_PUBLICOS =
   'id, ciudad_zona, precio, arv, beds, baths, sqft, lot_size, year_built, drive_url, imagen_portada, estado, tiene_portada_drive, ultima_confirmacion';
 
 export function enlaceWhatsApp(prop: PropiedadPublica) {
-  const numero = process.env.NEXT_PUBLIC_WHATSAPP_ASESOR || '16025550199';
-  const mensaje = `Hola, me interesa coordinar una visita para la propiedad en ${prop.ciudad_zona} de $${Number(prop.precio).toLocaleString()} USD (ref. ${prop.id}).`;
+  const numero = numeroWhatsAppAsesor();
+  if (!numero) return null;
+  const precio = Number(prop.precio).toLocaleString('en-US');
+  const mensaje = prop.estado === 'disponible'
+    ? `Hola, me interesa coordinar una visita para la propiedad en ${prop.ciudad_zona} de $${precio} USD (ref. ${prop.id}).`
+    : `Hola, Sergio. Vi la ficha de ${prop.ciudad_zona} de $${precio} USD (ref. ${prop.id}). ¿Tienes alguna casa similar disponible?`;
   return `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
 }
 

@@ -1,5 +1,6 @@
 import { rejectUnauthorizedAdmin } from '../../admin-access';
 import { abrirFotoDrive, ErrorDrive, fotoParaPanel, listarFotosDrive } from '../../drive';
+import { descargarOriginalDrive } from '../../foto-original-drive';
 
 export async function GET(request: Request) {
   const denied = await rejectUnauthorizedAdmin(request);
@@ -8,6 +9,15 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   try {
     const id = params.get('foto');
+    if (id && params.get('original') === '1') {
+      const { bytes, tipo } = await descargarOriginalDrive(id, params.get('clave') ?? undefined);
+      const imagen = new Blob([Uint8Array.from(bytes)]);
+      return new Response(imagen.stream(), { headers: {
+        'Content-Type': tipo,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      } });
+    }
     if (id) return await abrirFotoDrive(id, params.get('clave') ?? undefined);
     const carpeta = params.get('carpeta');
     if (!carpeta) return Response.json({ error: 'Indica la carpeta de Drive' }, { status: 400 });

@@ -1,6 +1,9 @@
 import type { FotoDrive } from '@/lib/fotos-drive';
 import { identificadorDrive, listarFotosDrive } from '../../drive';
 
+// La copia WebP solo se lee al servir una portada individual.
+export const camposInventario = 'id,created_at,ciudad_zona,direccion_privada,precio,arv,beds,baths,sqft,lot_size,year_built,drive_url,imagen_portada,fotos_drive,portada_drive_id,tiene_portada_drive,notas_extra,publicada_en,estado,ultima_confirmacion,condiciones_texto,textos_version,script_fb_es,script_fb_en,script_wa_vip,script_filtro_curiosos,script_fb_es_aprobado,script_fb_en_aprobado,script_wa_vip_aprobado,script_filtro_curiosos_aprobado';
+
 function texto(value: unknown) {
   if (value == null || value === '') return null;
   if (typeof value !== 'string') throw new Error('Hay campos de texto inválidos');

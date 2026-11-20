@@ -2,19 +2,23 @@
 
 import { useState } from 'react';
 import {
-  canalesTexto, condicionesTexto, MAX_TEXTO, textosPropiedad,
+  canalesTexto, clavesCondiciones, clavesRasgos, condicionesTexto, MAX_TEXTO, mismasCondiciones,
+  publicosTexto, rasgosPublicos, textosPropiedad,
   type CanalTexto, type CondicionesTexto, type TextosFicha,
 } from '@/lib/textos-propiedad';
 
 type PeticionTexto =
-  | { accion: 'generar'; condiciones: CondicionesTexto }
+  | { accion: 'generar'; condiciones: CondicionesTexto; canal?: CanalTexto }
   | { accion: 'guardar' | 'aprobar'; canal: CanalTexto; texto: string };
 
-function EditorTexto({ canal, texto, aprobado, ocupado, enviar }: {
+function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, condicionesEditadas, generar, enviar }: {
   canal: CanalTexto;
   texto: string;
   aprobado: boolean;
   ocupado: boolean;
+  puedeGenerar: boolean;
+  condicionesEditadas: boolean;
+  generar: (canal: CanalTexto, hayCambiosLocales: boolean) => void;
   enviar: (peticion: PeticionTexto) => Promise<void>;
 }) {
   const [borrador, setBorrador] = useState(texto);
@@ -44,11 +48,15 @@ function EditorTexto({ canal, texto, aprobado, ocupado, enviar }: {
           className="w-full rounded border border-zinc-800 bg-zinc-900 p-2" />
       </label>
       <div className="flex flex-wrap gap-3 text-sm [&>button]:text-amber-300 [&>button:disabled]:text-zinc-500">
+        <button type="button" disabled={ocupado || !puedeGenerar}
+          aria-label={`${texto ? 'Regenerar' : 'Generar'} ${textosPropiedad[canal]}`} onClick={() => generar(canal, cambio)}>
+          {texto ? 'Regenerar este texto' : 'Generar este texto'}
+        </button>
         <button type="button" disabled={ocupado || !cambio || !borrador.trim()}
           onClick={() => void enviar({ accion: 'guardar', canal, texto: borrador })}>Guardar texto</button>
-        <button type="button" disabled={ocupado || cambio || !texto || aprobado}
+        <button type="button" disabled={ocupado || condicionesEditadas || cambio || !texto || aprobado}
           onClick={() => void enviar({ accion: 'aprobar', canal, texto })}>Aprobar texto</button>
-        <button type="button" disabled={ocupado || cambio || !aprobado || !texto}
+        <button type="button" disabled={ocupado || condicionesEditadas || cambio || !aprobado || !texto}
           onClick={copiar}>Copiar texto final</button>
       </div>
       {avisoCopia && <p role="status" className="text-xs text-zinc-300">{avisoCopia}</p>}
@@ -67,7 +75,10 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
   const [ocupado, setOcupado] = useState(false);
   const [mensaje, setMensaje] = useState('');
   const [fallo, setFallo] = useState('');
-  const [generaciones, setGeneraciones] = useState(0);
+  const [generaciones, setGeneraciones] = useState<Partial<Record<CanalTexto, number>>>({});
+  const paraGenerar = { ...condiciones, enganche: enganche.trim() ? Number(enganche) : undefined };
+  const puedeGenerar = requisitos.length === 0 && (!enganche || (Number(enganche) > 0 && Number(enganche) <= 100));
+  const condicionesEditadas = !mismasCondiciones(paraGenerar, ficha.condiciones_texto ?? {});
 
   const enviar = async (peticion: PeticionTexto) => {
     setOcupado(true);
@@ -76,10 +87,16 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
     try {
       const resultado = await guardar(ficha.textos_version ?? 0, peticion);
       if (peticion.accion === 'generar') {
-        setGeneraciones((total) => total + 1);
-        setMensaje(resultado.origen === 'plantillas'
-          ? 'Se usaron plantillas de respaldo. El diagnóstico de Gemini queda en la terminal del servidor.'
-          : 'Borradores generados con Gemini. Revísalos antes de aprobar.');
+        const afectados = peticion.canal ? [peticion.canal] : canalesTexto;
+        setGeneraciones((actual) => {
+          const siguiente = { ...actual };
+          for (const canal of afectados) siguiente[canal] = (actual[canal] ?? 0) + 1;
+          return siguiente;
+        });
+        const origen = resultado.origen === 'plantillas' ? 'plantilla de respaldo' : 'Gemini';
+        setMensaje(peticion.canal
+          ? `Borrador de ${textosPropiedad[peticion.canal]} generado con ${origen}. Revísalo antes de aprobarlo.`
+          : `Cuatro borradores generados con ${origen}. Revísalos antes de aprobar.`);
       }
     } catch (error) {
       setFallo(error instanceof Error ? error.message : 'No se guardaron los cambios');
@@ -88,12 +105,13 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
     }
   };
 
-  const generar = () => {
-    if (canalesTexto.some((canal) => ficha[canal]) && !confirm('¿Reemplazar los cuatro textos guardados y sus aprobaciones?')) return;
-    void enviar({
-      accion: 'generar',
-      condiciones: { ...condiciones, enganche: enganche.trim() ? Number(enganche) : undefined },
-    });
+  const generar = (canal?: CanalTexto, hayCambiosLocales = false) => {
+    if (canal) {
+      const confirmar = hayCambiosLocales || ficha[canal] || (condicionesEditadas && canalesTexto.some((otro) => ficha[`${otro}_aprobado`]));
+      const aviso = condicionesEditadas ? ' Los demás textos quedarán pendientes de revisión por el cambio de datos.' : '';
+      if (confirmar && !confirm(`¿Generar un nuevo borrador de ${textosPropiedad[canal]}?${aviso}`)) return;
+    } else if (canalesTexto.some((nombre) => ficha[nombre]) && !confirm('¿Reemplazar los cuatro textos y sus aprobaciones?')) return;
+    void enviar({ accion: 'generar', canal, condiciones: paraGenerar });
   };
 
   return (
@@ -102,7 +120,7 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
       <fieldset disabled={ocupado} className="space-y-3">
         <legend className="font-medium">Condiciones confirmadas para esta ficha</legend>
         <div className="flex flex-wrap gap-3">
-          {(Object.keys(condicionesTexto) as (keyof typeof condicionesTexto)[]).map((campo) => (
+          {clavesCondiciones.map((campo) => (
             <label key={campo} className="flex items-center gap-2">
               <input type="checkbox" checked={condiciones[campo] === true}
                 onChange={(event) => setCondiciones({ ...condiciones, [campo]: event.target.checked })} />
@@ -116,8 +134,34 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
               className="w-20 rounded border border-zinc-800 bg-zinc-950 p-1" />
           </label>
         </div>
-        <button type="button" disabled={requisitos.length > 0 || Boolean(enganche && (Number(enganche) <= 0 || Number(enganche) > 100))}
-          onClick={generar} className="rounded bg-zinc-800 px-3 py-2 text-amber-300 disabled:opacity-50">
+        <label className="grid gap-1">
+          Público de los anuncios en ambos idiomas
+          <select className="vip-input" value={condiciones.publico ?? 'mixto'} onChange={(evento) =>
+            setCondiciones({ ...condiciones, publico: evento.target.value as keyof typeof publicosTexto })}>
+            {Object.entries(publicosTexto).map(([valor, etiqueta]) => <option key={valor} value={valor}>{etiqueta}</option>)}
+          </select>
+        </label>
+        <fieldset className="space-y-2">
+          <legend className="font-medium">¿Qué destaca de esta casa?</legend>
+          <p>Elige hasta dos características que hayas confirmado para el anuncio.</p>
+          <div className="flex flex-wrap gap-3">
+            {clavesRasgos.map((rasgo) => (
+              <label key={rasgo} className="flex items-center gap-2">
+                <input type="checkbox" checked={condiciones.rasgos?.includes(rasgo) ?? false}
+                  disabled={(condiciones.rasgos?.length ?? 0) >= 2 && !condiciones.rasgos?.includes(rasgo)}
+                  onChange={(evento) => {
+                    const rasgos = condiciones.rasgos ?? [];
+                    setCondiciones({ ...condiciones, rasgos: evento.target.checked
+                      ? [...rasgos, rasgo] : rasgos.filter((valor) => valor !== rasgo) });
+                  }} />
+                {rasgosPublicos[rasgo].es}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {condicionesEditadas && <p className="text-zinc-300">Genera un borrador para guardar los cambios. Los textos aprobados volverán a revisión.</p>}
+        <button type="button" disabled={!puedeGenerar}
+          onClick={() => generar()} className="rounded bg-zinc-800 px-3 py-2 text-amber-300 disabled:opacity-50">
           {ocupado ? 'Procesando…' : 'Generar cuatro textos'}
         </button>
       </fieldset>
@@ -133,9 +177,10 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
       {fallo && <p role="alert" className="text-red-300">{fallo}</p>}
       <div className="grid gap-4 xl:grid-cols-2">
         {canalesTexto.map((canal) => (
-          <EditorTexto key={JSON.stringify([canal, ficha[canal], generaciones])}
+          <EditorTexto key={JSON.stringify([canal, ficha[canal], generaciones[canal]])}
             canal={canal} texto={ficha[canal] ?? ''} aprobado={ficha[`${canal}_aprobado`] === true}
-            ocupado={ocupado} enviar={enviar} />
+            ocupado={ocupado} puedeGenerar={puedeGenerar} condicionesEditadas={condicionesEditadas}
+            generar={generar} enviar={enviar} />
         ))}
       </div>
     </details>

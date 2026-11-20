@@ -5,6 +5,46 @@ import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
 
 type AbrirFoto = (foto: FotoDrive, signal?: AbortSignal) => Promise<Blob>;
 
+function guardarDescarga(blob: Blob, nombre: string) {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  document.body.append(enlace);
+  enlace.click();
+  enlace.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+export function DescargarSeleccionDrive({ fotos, abrirOriginal }: { fotos: FotoDrive[]; abrirOriginal: AbrirFoto }) {
+  const [progreso, setProgreso] = useState(0);
+  const [error, setError] = useState('');
+
+  const descargar = async () => {
+    setError('');
+    setProgreso(1);
+    try {
+      const { crearZipFotos } = await import('../../lib/zip-fotos');
+      const zip = await crearZipFotos(fotos, abrirOriginal, setProgreso);
+      guardarDescarga(zip, 'fotos-seleccionadas.zip');
+    } catch (causa) {
+      setError(causa instanceof Error ? causa.message : 'No se pudo preparar el ZIP. Inténtalo de nuevo.');
+    } finally {
+      setProgreso(0);
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <button type="button" disabled={progreso > 0} onClick={descargar}
+        className="public-action min-h-11" aria-live="polite">
+        {progreso ? `Preparando ZIP · ${progreso}/${fotos.length}` : `Descargar fotos seleccionadas (${fotos.length}) en ZIP`}
+      </button>
+      {error && <p role="alert" className="text-red-300">{error}</p>}
+    </div>
+  );
+}
+
 export function VistaFotoDrive({ foto, abrir, alCargar }: {
   foto: FotoDrive;
   abrir: AbrirFoto;
@@ -70,14 +110,7 @@ export function DescargarFotoDrive({ foto, abrir }: { foto: FotoDrive; abrir: Ab
     setError('');
     try {
       const blob = await abrir(foto);
-      const url = URL.createObjectURL(blob);
-      const enlace = document.createElement('a');
-      enlace.href = url;
-      enlace.download = foto.name.replace(/[\\/]/g, '_');
-      document.body.append(enlace);
-      enlace.click();
-      enlace.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      guardarDescarga(blob, foto.name.replace(/[\\/]/g, '_'));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo descargar la foto');
     } finally {
@@ -114,6 +147,7 @@ export function SelectorFotosDrive({
   alElegirPortada,
   listar,
   abrir,
+  abrirOriginal,
 }: {
   carpeta: string;
   seleccionadas: FotoDrive[];
@@ -122,6 +156,7 @@ export function SelectorFotosDrive({
   alElegirPortada: (foto: FotoDrive) => void;
   listar: (carpeta: string) => Promise<FotoDrive[]>;
   abrir: AbrirFoto;
+  abrirOriginal: AbrirFoto;
 }) {
   const idVista = useId();
   const [fotos, setFotos] = useState<FotoDrive[] | null>(null);
@@ -151,6 +186,7 @@ export function SelectorFotosDrive({
         {cargando ? 'Cargando fotos…' : 'Ver fotos de la carpeta'}
       </button>
       <p className="text-zinc-400">Revisa los nombres y las fotos. La portada y la carpeta pública deben ocultar la dirección exacta.</p>
+      {seleccionadas.length > 0 && <DescargarSeleccionDrive fotos={seleccionadas} abrirOriginal={abrirOriginal} />}
       {error && <p role="alert" className="text-red-300">{error}</p>}
       {fotos?.length === 0 && <p>No hay fotos compatibles para descargar en esta carpeta.</p>}
       {fotos && seleccionadas.some((foto) => !fotos.some((disponible) => disponible.id === foto.id)) && (

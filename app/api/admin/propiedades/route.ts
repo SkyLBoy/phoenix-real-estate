@@ -1,27 +1,46 @@
 import { NextResponse } from 'next/server';
-import { esEstadoDisponibilidad } from '../../../../lib/disponibilidad';
+import { esEstadoDisponibilidad, plazoConfirmacion } from '../../../../lib/disponibilidad';
+import type { FotoDrive } from '../../../../lib/fotos-drive';
+import { esZonaPublica } from '../../../../lib/zona-publica';
 import { ErrorDrive, fotoParaPanel, identificadorDrive } from '../../drive';
-import { camposFicha, urlPublica } from './campos';
+import { crearCopiaPortada } from '../../portada-drive';
+import { camposFicha, camposInventario, urlPublica } from './campos';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
 
 export async function GET(req: Request) {
   const denied = await rejectUnauthorizedAdmin(req);
   if (denied) return denied;
 
-  const { data, error } = await supabaseAdmin
-    .from('propiedades')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const params = new URL(req.url).searchParams;
+  const pendientes = params.get('vista') === 'por_confirmar';
+  const pagina = Number(params.get('pagina') ?? 0);
+  if (!Number.isSafeInteger(pagina) || pagina < 0 || pagina > 1_000_000) {
+    return NextResponse.json({ error: 'Página inválida' }, { status: 400 });
+  }
+  const porPagina = pendientes ? 10 : 25;
+  const paginar = pendientes || params.has('pagina');
+  let consulta = supabaseAdmin.from('propiedades').select(pendientes
+    ? 'id,ciudad_zona,direccion_privada,ultima_confirmacion,publicada_en,estado' : camposInventario);
+  if (pendientes) {
+    const limite = new Date(Date.now() - plazoConfirmacion).toISOString();
+    consulta = consulta.not('publicada_en', 'is', null).eq('estado', 'disponible')
+      .or(`ultima_confirmacion.is.null,ultima_confirmacion.lte.${limite}`)
+      .order('revision_desde').order('id');
+  } else {
+    consulta = consulta.order('created_at', { ascending: false }).order('id');
+  }
+  if (paginar) consulta = consulta.range(pagina * porPagina, (pagina + 1) * porPagina);
+  const { data, error } = await consulta.overrideTypes<{ id: string; fotos_drive?: FotoDrive[] }[], { merge: false }>();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const propiedades = data.map((propiedad) => ({
-    ...propiedad,
-    ...(propiedad.fotos_drive ? { fotos_drive: propiedad.fotos_drive.map(fotoParaPanel) } : {}),
+  const filas = paginar ? data.slice(0, porPagina) : data;
+  const propiedades = filas.map((ficha) => ({
+    ...ficha, ...(ficha.fotos_drive && { fotos_drive: ficha.fotos_drive.map(fotoParaPanel) }),
   }));
-  return NextResponse.json({ propiedades }, {
+  return NextResponse.json({ propiedades, ...(paginar && { hayMas: data.length > porPagina }) }, {
     headers: { 'Cache-Control': 'private, no-store' },
   });
 }
@@ -58,6 +77,7 @@ export async function PATCH(req: Request) {
   if (body.accion === 'guardar_borrador' || body.accion === 'publicar') {
     let cambios;
     const publicar = body.accion === 'publicar';
+    let zona: string | undefined;
     let portada: string | null = null;
     let portadaDrive: string | null = null;
     let carpeta: string | null = null;
@@ -70,8 +90,29 @@ export async function PATCH(req: Request) {
         }
         if (!portada && !portadaDrive) throw new Error('Revisa la portada antes de publicar');
         carpeta = urlPublica(body.carpeta_revisada);
+        if (body.confirmar_disponibilidad !== undefined && typeof body.confirmar_disponibilidad !== 'boolean') {
+          throw new Error('Indica si acabas de confirmar la disponibilidad');
+        }
+        const { data: ficha, error } = await supabaseAdmin.from('propiedades')
+          .select('ciudad_zona,estado,portada_drive_id,imagen_portada,drive_url,fotos_drive')
+          .eq('id', id).is('publicada_en', null).maybeSingle();
+        if (error) return NextResponse.json({ error: 'No se pudo consultar el borrador' }, { status: 500 });
+        if (!ficha) return NextResponse.json({ error: 'Recarga el inventario para revisar el borrador.' }, { status: 409 });
+        if (!esZonaPublica(ficha.ciudad_zona)) throw new Error('Guarda solo la ciudad o ZIP en la zona pública.');
+        zona = ficha.ciudad_zona;
+        if ((body.zona_revisada !== undefined && body.zona_revisada !== zona)
+          || (portadaDrive !== (ficha.portada_drive_id ?? null))
+          || (!portadaDrive && portada !== ficha.imagen_portada) || carpeta !== (ficha.drive_url ?? null)) {
+          return NextResponse.json({ error: 'La zona o las fotos cambiaron. Revisa la ficha de nuevo.' }, { status: 409 });
+        }
+        if (body.confirmar_disponibilidad && ficha.estado !== 'disponible') throw new Error('Revisa el estado de la ficha.');
+        const copia = portadaDrive ? await crearCopiaPortada(ficha.fotos_drive, portadaDrive) : undefined;
         const ahora = new Date().toISOString();
-        cambios = { publicada_en: ahora, ultima_confirmacion: ahora };
+        cambios = {
+          publicada_en: ahora,
+          ...(body.confirmar_disponibilidad && { ultima_confirmacion: ahora }),
+          ...(copia && { portada_webp: copia }),
+        };
       } else {
         cambios = await camposFicha(body.ficha);
       }
@@ -82,6 +123,8 @@ export async function PATCH(req: Request) {
     let query = supabaseAdmin.from('propiedades').update(cambios)
       .eq('id', id).is('publicada_en', null);
     if (publicar) {
+      query = query.eq('ciudad_zona', zona!);
+      if (body.confirmar_disponibilidad) query = query.eq('estado', 'disponible');
       query = portadaDrive
         ? query.eq('portada_drive_id', portadaDrive)
         : query.is('portada_drive_id', null).eq('imagen_portada', portada!);

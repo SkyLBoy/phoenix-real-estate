@@ -10,7 +10,7 @@ export function esEstadoDisponibilidad(valor: unknown): valor is EstadoDisponibi
   return typeof valor === 'string' && Object.hasOwn(estadosDisponibilidad, valor);
 }
 
-const plazoConfirmacion = 72 * 60 * 60 * 1000;
+export const plazoConfirmacion = 72 * 60 * 60 * 1000;
 
 export function etiquetaDisponibilidad(
   estado: EstadoDisponibilidad,

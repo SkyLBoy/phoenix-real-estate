@@ -16,9 +16,9 @@ export function identificadorDrive(value: unknown): value is string {
 
 function carpetaDrive(enlace: string) {
   const url = URL.canParse(enlace) ? new URL(enlace) : null;
-  const id = url?.pathname.match(/\/(?:drive\/(?:u\/\d+\/)?)?folders\/([\w-]+)\/?$/)?.[1]
-    ?? (url && ['/open', '/embeddedfolderview'].includes(url.pathname) ? url.searchParams.get('id') : null);
-  const key = url?.searchParams.get('resourcekey') ?? undefined;
+  const id = url?.pathname.match(/^\/(?:drive\/)?(?:u\/\d+\/)?folders\/([\w-]+)\/?$/)?.[1]
+    ?? (url && /^\/(?:u\/\d+\/)?(?:open|folderview|embeddedfolderview)\/?$/.test(url.pathname) ? url.searchParams.get('id') : null);
+  const key = url?.searchParams.get('resourcekey') ?? url?.searchParams.get('resourceKey') ?? undefined;
   if (url?.origin !== 'https://drive.google.com' || !identificadorDrive(id)
     || (key !== undefined && !identificadorDrive(key))) {
     throw new ErrorDrive('Pega el enlace de una carpeta compartida de Google Drive', 400);
@@ -65,11 +65,7 @@ export function fotoParaPanel(foto: FotoDrive): FotoDrivePanel {
   return { ...foto, miniaturaUrl: enlaceMiniatura(foto.id, foto.resourceKey).href, descargaUrl: descarga.href };
 }
 
-async function listarCarpetaPublica(id: string, key?: string): Promise<FotoDrive[]> {
-  const url = new URL('https://drive.google.com/embeddedfolderview');
-  url.searchParams.set('id', id);
-  if (key) url.searchParams.set('resourcekey', key);
-
+async function leerHtmlDrive(url: URL) {
   const response = await fetch(url, {
     cache: 'no-store',
     redirect: 'manual',
@@ -80,7 +76,14 @@ async function listarCarpetaPublica(id: string, key?: string): Promise<FotoDrive
   }
   if (!response.ok) throw new ErrorDrive('Google Drive no está disponible en este momento', 502);
 
-  const documento = parse(await response.text());
+  return response.text();
+}
+
+async function listarVistaIncrustada(id: string, key?: string): Promise<FotoDrive[]> {
+  const url = new URL('https://drive.google.com/embeddedfolderview');
+  url.searchParams.set('id', id);
+  if (key) url.searchParams.set('resourcekey', key);
+  const documento = parse(await leerHtmlDrive(url));
   const lista = documento.querySelector('.flip-entries');
   const entradas = lista?.querySelectorAll('.flip-entry') ?? documento.querySelectorAll('.flip-entry');
   if (!lista && !entradas.length) {
@@ -109,6 +112,53 @@ async function listarCarpetaPublica(id: string, key?: string): Promise<FotoDrive
     });
   }
   return [...fotos.values()];
+}
+
+async function listarVistaNormal(id: string, key?: string): Promise<FotoDrive[]> {
+  const url = new URL(`https://drive.google.com/drive/folders/${id}`);
+  if (key) url.searchParams.set('resourcekey', key);
+  const html = await leerHtmlDrive(url);
+
+  // Drive serializa los archivos de la carpeta dentro de una cadena de un script.
+  // Se decodifica el valor como datos, sin interpretar ni ejecutar JavaScript.
+  const carga = html.match(/window\['_DRIVE_ivd'\]\s*=\s*'((?:\\.|[^'\\])*)'/u)?.[1];
+  let filas: unknown;
+  if (carga !== undefined) {
+    try {
+      const json = carga.replace(/\\(?:x([\da-f]{2})|u([\da-f]{4})|([\\/'"]))/gi,
+        (_escape, hex: string | undefined, unicode: string | undefined, literal: string | undefined) =>
+          literal ?? String.fromCharCode(parseInt(hex ?? unicode ?? '0', 16)));
+      filas = JSON.parse(json)?.[0];
+    } catch {
+      filas = undefined;
+    }
+  }
+  if (!Array.isArray(filas)) {
+    throw new ErrorDrive('No se pudo leer la carpeta. Comprueba que el enlace abra Drive sin iniciar sesión.', 422);
+  }
+
+  const fotos = new Map<string, FotoDrive>();
+  for (const fila of filas) {
+    if (!Array.isArray(fila)) continue;
+    const [fileId, padres, name, tipo] = fila;
+    if (!identificadorDrive(fileId) || typeof name !== 'string' || !name.trim()
+      || !tiposImagen.has(tipo) || !Array.isArray(padres) || !padres.includes(id)) continue;
+    const enlace = typeof fila[114] === 'string' && URL.canParse(fila[114]) ? new URL(fila[114]) : null;
+    const clave = enlace?.origin === url.origin && enlace.pathname === `/file/d/${fileId}/view`
+      ? enlace.searchParams.get('resourcekey') : null;
+    fotos.set(fileId, { id: fileId, name, ...(identificadorDrive(clave) ? { resourceKey: clave } : {}) });
+  }
+  return [...fotos.values()];
+}
+
+async function listarCarpetaPublica(id: string, key?: string) {
+  try {
+    const fotos = await listarVistaIncrustada(id, key);
+    if (fotos.length) return fotos;
+    return await listarVistaNormal(id, key).catch(() => fotos);
+  } catch {
+    return listarVistaNormal(id, key);
+  }
 }
 
 export async function listarFotosDrive(enlace: string): Promise<FotoDrive[]> {

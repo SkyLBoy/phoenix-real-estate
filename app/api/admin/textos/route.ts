@@ -1,4 +1,4 @@
-import { canalesTexto, MAX_TEXTO, requisitosTextos, type CanalTexto } from '../../../../lib/textos-propiedad';
+import { canalesTexto, MAX_TEXTO, mismasCondiciones, requisitosTextos, type CanalTexto } from '../../../../lib/textos-propiedad';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
 import { camposAnuncio, datosAnuncio, generarTextos, validarCondiciones, type FichaAnuncio } from './generador';
 
@@ -24,24 +24,31 @@ export async function POST(request: Request) {
   let origen: 'gemini' | 'plantillas' | undefined;
 
   if (accion === 'generar') {
-    let condiciones;
-    try {
-      condiciones = validarCondiciones(body.condiciones);
-    } catch (cause) {
-      return error((cause as Error).message, 400);
-    }
+    const canal: CanalTexto | undefined = body.canal;
+    if (canal !== undefined && !canalesTexto.includes(canal)) return error('Selecciona un texto válido', 400);
     const { data: ficha, error: consulta } = await supabaseAdmin.from('propiedades')
-      .select(camposAnuncio.join(',')).eq('id', id).eq('textos_version', version).maybeSingle()
-      .overrideTypes<FichaAnuncio | null, { merge: false }>();
+      .select([...camposAnuncio, 'condiciones_texto'].join(',')).eq('id', id).eq('textos_version', version).maybeSingle()
+      .overrideTypes<(FichaAnuncio & { condiciones_texto: unknown }) | null, { merge: false }>();
     if (consulta) return error('No se pudo cargar la ficha', 500);
     if (!ficha) return error('La ficha o sus textos cambiaron. Recarga el inventario.', 409);
 
-    const datos = datosAnuncio(ficha, condiciones);
+    const { condiciones_texto, ...datosFicha } = ficha;
+    let condiciones;
+    let cambiaronCondiciones;
+    try {
+      const guardadas = validarCondiciones(condiciones_texto);
+      condiciones = body.condiciones === undefined ? guardadas : validarCondiciones(body.condiciones);
+      cambiaronCondiciones = !mismasCondiciones(guardadas, condiciones);
+    } catch (cause) {
+      return error((cause as Error).message, 400);
+    }
+    const datos = datosAnuncio(datosFicha, condiciones);
     if (!datos) return error(requisitosTextos(ficha).join(' '), 400);
 
-    const resultado = await generarTextos(datos);
-    cambios = { ...resultado.textos, ...sinAprobar, condiciones_texto: condiciones };
-    instantanea = ficha;
+    const resultado = await generarTextos(datos, canal);
+    const aprobaciones = canal && !cambiaronCondiciones ? { [`${canal}_aprobado`]: false } : sinAprobar;
+    cambios = { ...resultado.textos, ...aprobaciones, condiciones_texto: condiciones };
+    instantanea = datosFicha;
     origen = resultado.origen;
   } else if (accion === 'guardar' || accion === 'aprobar') {
     const canal: CanalTexto = body.canal;

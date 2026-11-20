@@ -4,6 +4,8 @@ import { registerHooks } from 'node:module';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import sharp from 'sharp';
+import { unzipSync } from 'fflate';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -38,12 +40,16 @@ const outsider = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 process.env.ADMIN_USER_IDS = `${seller}, ${technician}`;
 
 const properties = new Map();
+const ofertas = new Map();
 const compradores = [];
 const serviceCalls = [];
 const entradasGemini = [];
 let simularGeminiInvalido = false;
 let respuestaGeminiDePrueba;
 const fotoDrive = { id: 'foto-1', name: 'Sala.jpg', resourceKey: 'clave-foto' };
+const fotoJpeg = await sharp({ create: { width: 1700, height: 850, channels: 3, background: 'tan' } }).jpeg().toBuffer();
+const fotoPng = await sharp({ create: { width: 80, height: 60, channels: 3, background: 'blue' } }).png().toBuffer();
+let driveSinAcceso = false;
 const carpetaDrive = 'https://drive.google.com/drive/folders/carpeta-1?resourcekey=clave-carpeta';
 const property = { id: 'casa-1', ciudad_zona: 'Phoenix', estado: 'disponible' };
 const scripts = {
@@ -66,7 +72,21 @@ globalThis.fetch = async (input, init) => {
     });
   }
 
+  if (url.hostname === 'drive.google.com' && url.pathname.startsWith('/drive/folders/')) {
+    if (url.pathname.endsWith('/restringida')) return new Response(null, { status: 403 });
+    if (url.pathname.endsWith('/formato-distinto')) return new Response('<html><body>Drive</body></html>');
+    assert.equal(url.pathname, '/drive/folders/carpeta-alterna');
+    assert.equal(url.searchParams.get('resourcekey'), 'clave-carpeta');
+    const imagen = ['foto-lateral', ['carpeta-alterna'], "Patio d’entrada #1.JPG", 'image/jpeg'];
+    imagen[114] = 'https://drive.google.com/file/d/foto-lateral/view?resourcekey=clave-lateral';
+    const filas = [imagen, ['pdf-falso', ['carpeta-alterna'], 'Falso.jpg', 'application/pdf'],
+      ['ajena', ['otra-carpeta'], 'Ajena.png', 'image/png']];
+    const carga = JSON.stringify([filas]).replaceAll('"', '\\x22').replaceAll('[', '\\x5b').replaceAll(']', '\\x5d');
+    return new Response(`<script>window['_DRIVE_ivd'] = '${carga}';</script>`);
+  }
+
   if (url.hostname === 'drive.google.com' && url.pathname === '/embeddedfolderview') {
+    if (url.searchParams.get('id') === 'carpeta-alterna') return new Response(null, { status: 403 });
     if (url.searchParams.get('id') === 'restringida') return new Response(null, { status: 403 });
     if (url.searchParams.get('id') === 'formato-distinto') return new Response('<html><body>Drive</body></html>');
     assert.equal(url.searchParams.get('id'), 'carpeta-1');
@@ -96,7 +116,7 @@ globalThis.fetch = async (input, init) => {
     assert.equal(url.searchParams.get('key'), 'drive-test-key');
     if (url.pathname === '/drive/v3/files/foto-1' && url.searchParams.get('alt') === 'media') {
       assert.equal(request.headers.get('x-goog-drive-resource-keys'), 'foto-1/clave-foto');
-      return new Response('foto de prueba', { headers: { 'Content-Type': 'image/jpeg' } });
+      return new Response(fotoJpeg, { headers: { 'Content-Type': 'image/jpeg' } });
     }
     assert.equal(request.headers.get('x-goog-drive-resource-keys'), 'carpeta-1/clave-carpeta');
     if (url.pathname === '/drive/v3/files/carpeta-1') {
@@ -115,10 +135,39 @@ globalThis.fetch = async (input, init) => {
     }
   }
 
+  if (url.hostname === 'drive.google.com' && (url.pathname === '/uc' || url.pathname === '/thumbnail')) {
+    if (driveSinAcceso) return new Response(null, { status: 403 });
+    if (url.searchParams.get('id') === 'foto-1') {
+      assert.equal(url.searchParams.get('resourcekey'), 'clave-foto');
+      return new Response(fotoJpeg, { headers: { 'Content-Type': 'application/octet-stream' } });
+    }
+    assert.equal(url.searchParams.get('id'), 'foto-2');
+    return new Response(fotoPng, { headers: { 'Content-Type': 'image/png' } });
+  }
+  if (url.hostname === 'drive.usercontent.google.com') return new Response(null, { status: 403 });
+
   if (url.hostname === 'supabase.test' && url.pathname === '/auth/v1/user') {
     const id = request.headers.get('authorization')?.match(/^Bearer (.*)$/)?.[1];
     if ([seller, technician, outsider].includes(id)) return Response.json({ id });
     return Response.json({ message: 'Invalid token' }, { status: 401 });
+  }
+
+  if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/casas_ofrecidas') {
+    assert.equal(request.headers.get('authorization'), 'Bearer service-role-key');
+    if (request.method === 'POST') {
+      const id = 'edee7d66-8832-40a5-9418-f47ab7190133';
+      const casa = { ...await request.json(), id, estado: 'nueva' };
+      ofertas.set(id, casa);
+      return Response.json(casa);
+    }
+    if (request.method === 'PATCH') {
+      const id = url.searchParams.get('id').slice(3);
+      if (!ofertas.has(id)) return Response.json([]);
+      const casa = { ...ofertas.get(id), ...await request.json() };
+      ofertas.set(id, casa);
+      return Response.json([casa]);
+    }
+    return Response.json([...ofertas.values()]);
   }
 
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/leads_compradores') {
@@ -137,6 +186,16 @@ globalThis.fetch = async (input, init) => {
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades_publicas') {
     assert.equal(request.headers.get('authorization'), 'Bearer anon-key');
     assert.equal(url.searchParams.get('estado'), 'eq.disponible');
+    if (url.searchParams.get('select') === 'id,ciudad_zona,precio') {
+      assert.equal(url.searchParams.get('or'), '(ciudad_zona.ilike."*peoria*",ciudad_zona.ilike."*85345*")');
+      const excluida = url.searchParams.get('id').slice(4);
+      const fechas = url.searchParams.get('ultima_confirmacion');
+      assert.match(fechas, /^gt\./);
+      return Response.json([...properties.values()].filter((ficha) => ficha.publicada_en
+        && ficha.estado === 'disponible' && ficha.id !== excluida
+        && ficha.ultima_confirmacion && ficha.ultima_confirmacion > fechas.slice(3))
+        .map(({ id, ciudad_zona, precio }) => ({ id, ciudad_zona, precio })));
+    }
     assert.equal(url.searchParams.get('order'), 'created_at.desc,id.asc');
     const campos = url.searchParams.get('select').split(',');
     assert.deepEqual(campos, ['ciudad_zona', 'precio', 'estado', 'ultima_confirmacion']);
@@ -151,11 +210,11 @@ globalThis.fetch = async (input, init) => {
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades') {
     switch (request.method) {
       case 'GET': {
-        if (url.searchParams.get('select') === 'fotos_drive,portada_drive_id,drive_url') {
+        if (url.searchParams.get('select') === 'fotos_drive,portada_drive_id,portada_webp') {
           assert.equal(url.searchParams.get('publicada_en'), 'not.is.null');
-          assert.equal(url.searchParams.get('estado'), 'neq.vendida');
+          assert.equal(url.searchParams.get('estado'), 'eq.disponible');
           const ficha = properties.get(url.searchParams.get('id').slice(3));
-          return Response.json(ficha?.publicada_en && ficha.estado !== 'vendida' ? [ficha] : []);
+          return Response.json(ficha?.publicada_en && ficha.estado === 'disponible' ? [ficha] : []);
         }
         if (url.searchParams.has('textos_version')) {
           const ficha = properties.get(url.searchParams.get('id').slice(3));
@@ -165,11 +224,30 @@ globalThis.fetch = async (input, init) => {
           return Response.json([Object.fromEntries(url.searchParams.get('select').split(',')
             .map((campo) => [campo, ficha[campo] ?? null]))]);
         }
-        return Response.json([...properties.values()]);
+        const campos = url.searchParams.get('select').split(',');
+        let fichas = [...properties.values()];
+        if (url.searchParams.get('publicada_en') === 'is.null') {
+          fichas = fichas.filter((ficha) => ficha.id === url.searchParams.get('id').slice(3) && ficha.publicada_en == null);
+        }
+        if (url.searchParams.has('or')) {
+          assert.equal(url.searchParams.get('publicada_en'), 'not.is.null');
+          assert.equal(url.searchParams.get('estado'), 'eq.disponible');
+          assert.equal(url.searchParams.get('order'), 'revision_desde.asc,id.asc');
+          const limite = Date.parse(url.searchParams.get('or').match(/^\(ultima_confirmacion\.is\.null,ultima_confirmacion\.lte\.(.+)\)$/)[1]);
+          fichas = fichas.filter((ficha) => ficha.publicada_en && ficha.estado === 'disponible'
+            && (!ficha.ultima_confirmacion || Date.parse(ficha.ultima_confirmacion) <= limite));
+          fichas.sort((a, b) => Date.parse(a.ultima_confirmacion ?? a.publicada_en) - Date.parse(b.ultima_confirmacion ?? b.publicada_en)
+            || a.id.localeCompare(b.id));
+        }
+        if (url.searchParams.has('limit')) {
+          const inicio = Number(url.searchParams.get('offset'));
+          fichas = fichas.slice(inicio, inicio + Number(url.searchParams.get('limit')));
+        }
+        return Response.json(fichas.map((ficha) => Object.fromEntries(campos.map((campo) => [campo, ficha[campo]]))));
       }
       case 'POST': {
         const [body] = await request.json();
-        const created = { ...body, id: 'casa-2', estado: 'disponible' };
+        const created = { ultima_confirmacion: null, ...body, id: 'casa-2', estado: 'disponible' };
         properties.set(created.id, created);
         return Response.json(created);
       }
@@ -207,6 +285,53 @@ const { GET, PATCH, DELETE } = await import('../app/api/admin/propiedades/route.
 const { POST } = await import('../app/api/procesar-propiedad/route.ts');
 const { GET: DRIVE } = await import('../app/api/admin/drive/route.ts');
 const { GET: PORTADA } = await import('../app/api/propiedades/[id]/portada/route.ts');
+
+test('el contacto público conserva la referencia y nunca abre el WhatsApp de ejemplo', async () => {
+  const { enlaceWhatsApp } = await import('../lib/propiedades-publicas.ts');
+  const anterior = process.env.NEXT_PUBLIC_WHATSAPP_ASESOR;
+  try {
+    const prop = { id: 'ref-17', ciudad_zona: 'Peoria, AZ 85345', precio: 292000, estado: 'disponible' };
+    delete process.env.NEXT_PUBLIC_WHATSAPP_ASESOR;
+    assert.equal(enlaceWhatsApp(prop), null);
+    for (const valor of ['16025550199', '6025550123', 'incorrecto']) {
+      process.env.NEXT_PUBLIC_WHATSAPP_ASESOR = valor;
+      assert.equal(enlaceWhatsApp(prop), null);
+    }
+    process.env.NEXT_PUBLIC_WHATSAPP_ASESOR = '+16025550120';
+    assert.match(new URL(enlaceWhatsApp(prop)).searchParams.get('text'), /coordinar una visita/);
+    for (const estado of ['en_contrato', 'vendida']) {
+      const url = new URL(enlaceWhatsApp({ ...prop, estado }));
+      assert.equal(url.pathname, '/16025550120');
+      assert.match(url.searchParams.get('text'), /Peoria, AZ 85345 de \$292,000 USD \(ref\. ref-17\).*similar/);
+    }
+  } finally {
+    if (anterior === undefined) delete process.env.NEXT_PUBLIC_WHATSAPP_ASESOR;
+    else process.env.NEXT_PUBLIC_WHATSAPP_ASESOR = anterior;
+  }
+});
+
+test('un enlace histórico sugiere hasta dos casas confirmadas por ZIP, ciudad y precio', async () => {
+  const { cargarSimilares } = await import('../lib/propiedades-similares.ts');
+  const ahora = Date.parse('2026-11-20T18:00:00Z');
+  const ref = { id: 'anterior', ciudad_zona: 'Peoria, AZ 85345', precio: 290000 };
+  const hoy = new Date(ahora).toISOString();
+  const limite = new Date(ahora - 72 * 3600000).toISOString();
+  const fichas = [
+    ['mismo-zip', 'Peoria 85345', 304000], ['cercana', 'Peoria, AZ 85383', 291000],
+    ['cara', 'Peoria', 450000], ['otra', 'East Peoria', 290000],
+    ['pendiente', 'Peoria 85345', 290000, limite], ['nunca', 'Peoria 85345', 290000, null],
+  ];
+  try {
+    for (const [id, ciudad_zona, precio, ultima_confirmacion = hoy] of fichas) {
+      properties.set(id, { id, ciudad_zona, precio, ultima_confirmacion, publicada_en: hoy, estado: 'disponible' });
+    }
+    const similares = await cargarSimilares(ref, ahora);
+    assert.deepEqual(similares.map(({ id }) => id), ['mismo-zip', 'cercana']);
+    assert.deepEqual(await cargarSimilares({ ...ref, ciudad_zona: '123 N Main St' }, ahora), []);
+  } finally {
+    for (const [id] of fichas) properties.delete(id);
+  }
+});
 
 function request(handler, method, { token, query = '', body } = {}) {
   const path = method === 'POST' ? '/api/procesar-propiedad' : '/api/admin/propiedades';
@@ -314,10 +439,19 @@ test('el operador guarda, completa y publica un borrador con la portada que revi
   assert.equal((await publish(cover)).status, 400);
 
   assert.equal((await save({
+    ciudad_zona: '4512 W McDowell Rd', precio: 123000, imagen_portada: cover, drive_url: folder,
+  })).status, 200);
+  assert.equal((await patch({ accion: 'publicar', zona_revisada: 'Phoenix',
+    portada_revisada: cover, carpeta_revisada: folder })).status, 400);
+  assert.equal(properties.get(draft.id).publicada_en, null);
+
+  assert.equal((await save({
     ciudad_zona: 'Phoenix 85035', precio: 123000, imagen_portada: cover, drive_url: folder,
   })).status, 200);
   assert.equal((await publish('https://images.test/otra.jpg')).status, 409);
   assert.equal((await publish(cover, 'https://drive.google.com/drive/folders/otra')).status, 409);
+  assert.equal((await patch({ accion: 'publicar', zona_revisada: 'Mesa',
+    portada_revisada: cover, carpeta_revisada: folder })).status, 409);
   assert.equal((await publish(cover)).status, 200);
   assert.equal((await publish(cover)).status, 409);
   assert.equal((await save({ ciudad_zona: 'Otro valor' })).status, 409);
@@ -327,7 +461,35 @@ test('el operador guarda, completa y publica un borrador con la portada que revi
   assert.equal(published.ciudad_zona, 'Phoenix 85035');
   assert.equal(published.precio, 123000);
   assert.ok(Number.isFinite(Date.parse(published.publicada_en)));
-  assert.equal(published.ultima_confirmacion, published.publicada_en);
+  assert.equal(published.ultima_confirmacion, null);
+});
+
+test('publicar conserva la última verificación o registra la confirmación explícita del vendedor', async () => {
+  const fecha = '2025-11-01T13:20:00Z';
+  const portada = 'https://images.test/prueba.jpg';
+  for (const confirmar of [false, true]) {
+    const id = `borrador-confirmacion-${confirmar}`;
+    properties.set(id, { id, estado: 'disponible', ciudad_zona: '85345', precio: 292000,
+      imagen_portada: portada, publicada_en: null, ultima_confirmacion: fecha });
+    const publicar = (valor) => request(PATCH, 'PATCH', { token: seller, body: {
+      id, accion: 'publicar', portada_revisada: portada, zona_revisada: '85345', confirmar_disponibilidad: valor,
+    } });
+    assert.equal((await publicar('sí')).status, 400);
+    assert.equal((await publicar(confirmar)).status, 200);
+    const ficha = properties.get(id);
+    assert.equal(ficha.ultima_confirmacion, confirmar ? ficha.publicada_en : fecha);
+    properties.delete(id);
+  }
+});
+
+test('la zona pública acepta localidades y ZIP y rechaza domicilios, unidades y cruces', async () => {
+  const { esZonaPublica } = await import('../lib/zona-publica.ts');
+  for (const zona of ['Peoria, AZ 85345', 'Peoria 85345', '85035', '85281-2000', 'St. Johns', 'San José', 'Tempe, 85281']) {
+    assert.equal(esZonaPublica(zona), true, zona);
+  }
+  for (const zona of ['', null, '4512 W McDowell Rd', 'Phoenix Apt 4', 'Mesa #2', '7th Ave & Bell', '12345 W Bell Rd']) {
+    assert.equal(esZonaPublica(zona), false, String(zona));
+  }
 });
 
 
@@ -408,7 +570,7 @@ test('Drive lista fotos compatibles, guarda la selección y sirve la portada sol
 
   const descarga = await drive({ foto: fotoDrive.id, clave: fotoDrive.resourceKey }, seller);
   assert.equal(descarga.headers.get('content-type'), 'image/jpeg');
-  assert.equal(await descarga.text(), 'foto de prueba');
+  assert.deepEqual(Buffer.from(await descarga.arrayBuffer()), fotoJpeg);
 
   const ficha = { ciudad_zona: 'Phoenix', precio: 250000, drive_url: carpetaDrive, generar_anuncios: false };
   const externa = await request(POST, 'POST', { token: seller, body: {
@@ -436,13 +598,18 @@ test('Drive lista fotos compatibles, guarda la selección y sirve la portada sol
     id: propiedad.id, accion: 'publicar', portada_drive_revisada: fotoDrive.id, carpeta_revisada: carpetaDrive,
   } });
   assert.equal(publicacion.status, 200);
+  const consultasTrasPublicar = serviceCalls.length;
   const portada = await portadaPublica();
   assert.equal(portada.status, 200);
-  assert.equal(await portada.text(), 'foto de prueba');
+  assert.equal(portada.headers.get('content-type'), 'image/webp');
+  const metadata = await sharp(Buffer.from(await portada.arrayBuffer())).metadata();
+  assert.equal(metadata.width, 1600);
+  assert.equal(metadata.height, 800);
+  assert.deepEqual(serviceCalls.slice(consultasTrasPublicar), ['/rest/v1/propiedades']);
 });
 
 
-test('sin clave, el panel lee Drive público y conserva las descargas y portadas directas', async () => {
+test('sin clave, Drive público entrega originales seleccionados en un ZIP y conserva la portada tras publicar', async () => {
   const clave = process.env.GOOGLE_DRIVE_API_KEY;
   delete process.env.GOOGLE_DRIVE_API_KEY;
   try {
@@ -468,8 +635,33 @@ test('sin clave, el panel lee Drive público y conserva las descargas y portadas
       },
     ]);
     assert.deepEqual(await (await listar(carpetaDrive)).json(), { fotos });
+    const { crearZipFotos } = await import('../lib/zip-fotos.ts');
+    const descargar = (foto, token) => DRIVE(new Request(
+      'https://panel.test/api/admin/drive?' + new URLSearchParams({
+        foto: foto.id, original: '1', ...(foto.resourceKey ? { clave: foto.resourceKey } : {}),
+      }),
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    ));
+    assert.equal((await descargar(fotos[0])).status, 401);
+    const progreso = [];
+    const zip = await crearZipFotos(fotos, async (foto) => {
+      const respuesta = await descargar(foto, seller);
+      assert.equal(respuesta.status, 200);
+      return respuesta.blob();
+    }, (indice) => progreso.push(indice));
+    const extraidas = unzipSync(new Uint8Array(await zip.arrayBuffer()));
+    assert.deepEqual(Object.keys(extraidas), ['01 - Sala & patio.JPG', '02 - Fachada.PNG']);
+    assert.deepEqual(Buffer.from(extraidas['01 - Sala & patio.JPG']), fotoJpeg);
+    assert.deepEqual(Buffer.from(extraidas['02 - Fachada.PNG']), fotoPng);
+    assert.deepEqual(progreso, [1, 2]);
     assert.equal((await listar('https://drive.google.com/drive/folders/restringida')).status, 422);
     assert.equal((await listar('https://drive.google.com/drive/folders/formato-distinto')).status, 422);
+    const alterna = await listar('https://drive.google.com/u/0/folderview?id=carpeta-alterna&resourceKey=clave-carpeta');
+    assert.equal(alterna.status, 200);
+    const listadoAlterno = (await alterna.json()).fotos;
+    assert.deepEqual(listadoAlterno.map(({ id, name, resourceKey }) => ({ id, name, resourceKey })), [
+      { id: 'foto-lateral', name: 'Patio d’entrada #1.JPG', resourceKey: 'clave-lateral' },
+    ]);
 
     const guardado = await request(POST, 'POST', { token: seller, body: {
       ciudad_zona: 'Phoenix', precio: 250000, drive_url: embebido,
@@ -485,18 +677,52 @@ test('sin clave, el panel lee Drive público y conserva las descargas y portadas
       params: Promise.resolve({ id: propiedad.id }),
     });
     assert.equal((await portada()).status, 404);
+    driveSinAcceso = true;
+    const fallo = await request(PATCH, 'PATCH', { token: seller, body: {
+      id: propiedad.id, accion: 'publicar', portada_drive_revisada: 'foto-2', carpeta_revisada: embebido,
+    } });
+    assert.equal(fallo.status, 422);
+    assert.equal(properties.get(propiedad.id).publicada_en, null);
+    driveSinAcceso = false;
     const publicado = await request(PATCH, 'PATCH', { token: seller, body: {
       id: propiedad.id, accion: 'publicar', portada_drive_revisada: 'foto-2', carpeta_revisada: embebido,
     } });
     assert.equal(publicado.status, 200);
+    driveSinAcceso = true;
+    const antesPortada = serviceCalls.length;
     const respuesta = await portada();
-    assert.equal(respuesta.status, 302);
-    assert.equal(respuesta.headers.get('location'), fotos[1].miniaturaDrive.replace('=s190', '=s1600'));
+    assert.equal(respuesta.status, 200);
+    assert.equal(respuesta.headers.get('Content-Type'), 'image/webp');
+    assert.deepEqual(serviceCalls.slice(antesPortada), ['/rest/v1/propiedades']);
+    driveSinAcceso = false;
+    const antigua = properties.get(propiedad.id);
+    properties.set(propiedad.id, { ...antigua, portada_webp: null });
+    assert.equal((await portada()).status, 200);
+    assert.ok(properties.get(propiedad.id).portada_webp);
+    for (const estado of ['en_contrato', 'vendida']) {
+      properties.set(propiedad.id, { ...antigua, estado });
+      assert.equal((await portada()).status, 404);
+    }
   } finally {
+    driveSinAcceso = false;
     process.env.GOOGLE_DRIVE_API_KEY = clave;
   }
 });
 
+
+test('el ZIP evita colisiones de nombres y conserva el error de una descarga incompleta', async () => {
+  const { crearZipFotos } = await import('../lib/zip-fotos.ts');
+  const seleccion = ['a', 'b'].map((id) => ({ id, name: 'Fotos/Sala.jpg' }));
+  const original = new Blob([fotoJpeg]);
+  const zip = await crearZipFotos(seleccion, async () => original, () => {});
+  const archivos = unzipSync(new Uint8Array(await zip.arrayBuffer()));
+  assert.deepEqual(Object.keys(archivos), ['01 - Fotos_Sala.jpg', '02 - Fotos_Sala.jpg']);
+  await assert.rejects(crearZipFotos(seleccion, async ({ id }) => {
+    if (id === 'b') throw new Error('Permiso denegado');
+    return original;
+  }, () => {}), /Fotos\/Sala.jpg.*Permiso denegado/);
+  await assert.rejects(crearZipFotos(Array(61).fill(seleccion[0]), async () => original, () => {}), /60 fotos/);
+});
 
 test('los cuatro borradores se generan con datos públicos y la aprobación corresponde al texto guardado', async () => {
   const { POST: TEXTOS } = await import('../app/api/admin/textos/route.ts');
@@ -591,6 +817,42 @@ test('la vigencia vence a las 72 horas sin ocultar propiedades disponibles', asy
   assert.equal(etiquetaDisponibilidad('disponible', null, limite), 'Por confirmar');
   assert.equal(etiquetaDisponibilidad('en_contrato', confirmacion, limite), 'En contrato');
   assert.equal(etiquetaDisponibilidad('vendida', confirmacion, limite), 'Ya no disponible');
+});
+
+test('la cola prioriza fichas pendientes por antigüedad y el inventario permite llegar a las históricas', async () => {
+  const anteriores = new Map(properties);
+  properties.clear();
+  try {
+    const hoy = new Date().toISOString();
+    for (let i = 1; i <= 12; i++) {
+      const fecha = `2020-11-${String(i).padStart(2, '0')}T12:00:00Z`;
+      properties.set(`id-${i}`, { id: `id-${i}`, publicada_en: fecha, estado: 'disponible',
+        ultima_confirmacion: i % 2 === 0 ? null : fecha, ciudad_zona: 'Mesa', notas_extra: 'privada' });
+    }
+    properties.set('nueva', { id: 'nueva', publicada_en: hoy, estado: 'disponible', ultima_confirmacion: hoy });
+    properties.set('borrador', { id: 'borrador', publicada_en: null, estado: 'disponible' });
+    for (let i = 1; i <= 20; i++) {
+      properties.set(`vendida-${i}`, { id: `vendida-${i}`, publicada_en: hoy, estado: 'vendida' });
+    }
+    const cargar = async (query) => (await request(GET, 'GET', { token: seller, query })).json();
+    const cola = await cargar('?vista=por_confirmar&pagina=0');
+    assert.deepEqual(cola.propiedades.map(({ id }) => id), Array.from({ length: 10 }, (_, i) => `id-${i + 1}`));
+    assert.equal(cola.hayMas, true);
+    assert.equal(Object.hasOwn(cola.propiedades[0], 'notas_extra'), false);
+    const resto = await cargar('?vista=por_confirmar&pagina=1');
+    assert.deepEqual(resto.propiedades.map(({ id }) => id), ['id-11', 'id-12']);
+    assert.equal(resto.hayMas, false);
+    const primera = await cargar('?pagina=0');
+    const segunda = await cargar('?pagina=1');
+    assert.equal(primera.propiedades.length, 25);
+    assert.equal(primera.hayMas, true);
+    assert.equal(segunda.hayMas, false);
+    assert.equal(new Set([...primera.propiedades, ...segunda.propiedades].map(({ id }) => id)).size, properties.size);
+    assert.equal((await request(GET, 'GET', { token: seller, query: '?pagina=-1' })).status, 400);
+  } finally {
+    properties.clear();
+    for (const [id, ficha] of anteriores) properties.set(id, ficha);
+  }
 });
 
 test('confirmar y reactivar actualizan la fecha sin cambiar el identificador de la ficha', async () => {
@@ -780,5 +1042,146 @@ test('descarta que la casa requiere arreglos o admite crédito bancario cuando s
     } finally {
       respuestaGeminiDePrueba = undefined;
     }
+  }
+});
+
+test('el operador registra, consulta y actualiza una casa ofrecida en privado', async () => {
+  const { GET, POST, PATCH } = await import('../app/api/admin/casas-ofrecidas/route.ts');
+  const datos = { nombre: 'Propietaria de prueba', whatsapp: '6621234567', pais: 'MX', zona: 'Mesa 85201',
+    condicion: 'por_confirmar', fotos_url: 'https://drive.google.com/drive/folders/prueba' };
+  const operar = (handler, method, token, body) => handler(new Request('https://panel.test/api/admin/casas-ofrecidas', {
+    method, headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  }));
+  assert.equal((await operar(GET, 'GET')).status, 401);
+  assert.equal((await operar(GET, 'GET', outsider)).status, 403);
+  assert.equal((await operar(POST, 'POST', outsider, datos)).status, 403);
+  assert.equal((await operar(POST, 'POST', seller, { ...datos, fotos_url: 'javascript:alert(1)' })).status, 400);
+  const respuesta = await operar(POST, 'POST', seller, datos);
+  assert.equal(respuesta.status, 201);
+  const { casa } = await respuesta.json();
+  assert.equal(casa.estado, 'nueva');
+  assert.equal(casa.whatsapp, '+526621234567');
+  assert.equal(casa.precio_esperado, null);
+  const lista = await operar(GET, 'GET', seller);
+  assert.match(lista.headers.get('cache-control'), /private, no-store/);
+  assert.deepEqual((await lista.json()).casas, [casa]);
+  assert.equal((await operar(PATCH, 'PATCH', outsider, { id: casa.id, estado: 'contactada' })).status, 403);
+  const cambio = await operar(PATCH, 'PATCH', seller, { id: casa.id, estado: 'en_evaluacion' });
+  assert.equal(cambio.status, 200);
+  assert.equal((await cambio.json()).casa.estado, 'en_evaluacion');
+});
+
+test('un propietario envía su casa desde el catálogo y aparece como nueva en la bandeja privada', async () => {
+  const { POST } = await import('../app/api/casas-ofrecidas/route.ts');
+  const { GET } = await import('../app/api/admin/casas-ofrecidas/route.ts');
+  const base = { nombre: 'Persona de prueba', zona: 'Phoenix 85035', pais: 'US', whatsapp: '6025550123',
+    condicion: 'habitable', estado: 'cerrada', notas: 'Puedo conversar esta semana.' };
+  const publicar = (body) => POST(new Request('https://panel.test/api/casas-ofrecidas', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }));
+
+  assert.equal((await publicar({ ...base, whatsapp: '' })).status, 400);
+  const respuesta = await publicar(base);
+  assert.equal(respuesta.status, 201);
+  assert.deepEqual(await respuesta.json(), { ok: true });
+
+  const privada = await GET(new Request('https://panel.test/api/admin/casas-ofrecidas', {
+    headers: { Authorization: `Bearer ${seller}` },
+  }));
+  const { casas } = await privada.json();
+  const casa = casas.find((item) => item.nombre === base.nombre);
+  assert.equal(casa.estado, 'nueva');
+  assert.equal(casa.whatsapp, '+16025550123');
+  assert.equal(casa.zona, 'Phoenix 85035');
+});
+
+test('regenerar un canal conserva los demás textos y revisa sus aprobaciones al cambiar los datos compartidos', async () => {
+  const { POST: generar } = await import('../app/api/admin/textos/route.ts');
+  const id = 'casa-regeneracion';
+  const condiciones = { publico: 'vivienda', rasgos: ['techoNuevo', 'piscina'], itin: true };
+  const aprobaciones = Object.fromEntries(Object.keys(scripts).map((canal) => [`${canal}_aprobado`, true]));
+  properties.set(id, {
+    id, textos_version: 5, estado: 'disponible', precio: 235000, ciudad_zona: 'Mesa',
+    notas_extra: 'teléfono privado del propietario', direccion_privada: '333 W Main Street',
+    ...scripts, script_fb_en: 'Edited English copy', ...aprobaciones, condiciones_texto: condiciones,
+  });
+  const regenerar = (version, cambios) => request(generar, 'POST', {
+    token: seller, body: { id, version, accion: 'generar', canal: 'script_fb_es', ...cambios },
+  });
+  const inicio = entradasGemini.length;
+  assert.equal((await regenerar(5, { condiciones: { rasgos: ['333 W Main Street'] } })).status, 400);
+  assert.equal((await regenerar(5, { condiciones: { rasgos: ['piscina', 'garaje', 'techoNuevo'] } })).status, 400);
+  assert.equal((await regenerar(5, { canal: 'otra' })).status, 400);
+  assert.equal(entradasGemini.length, inicio);
+  const primera = await regenerar(5, { condiciones: { ...condiciones, rasgos: ['piscina', 'techoNuevo'], contado: false } });
+  assert.equal(primera.status, 200);
+  const { textos, origen } = await primera.json();
+  assert.equal(origen, 'gemini');
+  assert.equal(textos.script_fb_es_aprobado, false);
+  assert.equal(textos.script_fb_en, 'Edited English copy');
+  assert.equal(textos.script_fb_en_aprobado, true);
+  assert.equal(textos.script_wa_vip_aprobado, true);
+  assert.equal(textos.script_filtro_curiosos_aprobado, true);
+  const llamada = JSON.parse(entradasGemini[inicio]);
+  assert.deepEqual(llamada.generationConfig.responseSchema.required, ['script_fb_es']);
+  assert.match(llamada.contents[0].parts[0].text, /"publico":"vivienda"/);
+  assert.match(llamada.contents[0].parts[0].text, /Techo nuevo/);
+  assert.doesNotMatch(entradasGemini[inicio], /privado del propietario|333 W Main Street/);
+  assert.equal((await regenerar(5)).status, 409);
+
+  const segunda = await regenerar(6, { condiciones: { publico: 'inversion', rasgos: ['garaje'] } });
+  assert.equal(segunda.status, 200);
+  const actualizados = (await segunda.json()).textos;
+  assert.equal(actualizados.textos_version, 7);
+  assert.equal(actualizados.script_fb_en, 'Edited English copy');
+  assert.deepEqual(actualizados.condiciones_texto, { publico: 'inversion', rasgos: ['garaje'] });
+  for (const canal of Object.keys(scripts)) assert.equal(actualizados[`${canal}_aprobado`], false);
+});
+
+test('una regeneración en curso respeta la corrección concurrente del precio', async () => {
+  const { POST: generar } = await import('../app/api/admin/textos/route.ts');
+  const id = 'precio-mientras-se-redacta';
+  properties.set(id, { id, ciudad_zona: 'Mesa', precio: 210000, textos_version: 2,
+    estado: 'disponible', script_fb_es: 'Texto editado por Sergio' });
+  const fetchAnterior = globalThis.fetch;
+  try {
+    globalThis.fetch = async (input, init) => {
+      if (new URL(input instanceof Request ? input.url : input).hostname === 'generativelanguage.googleapis.com') {
+        properties.set(id, { ...properties.get(id), precio: 197000, textos_version: 3 });
+      }
+      return fetchAnterior(input, init);
+    };
+    const respuesta = await request(generar, 'POST', { token: seller, body: {
+      id, version: 2, accion: 'generar', canal: 'script_fb_es',
+    } });
+    assert.equal(respuesta.status, 409);
+    assert.equal(properties.get(id).precio, 197000);
+    assert.equal(properties.get(id).textos_version, 3);
+    assert.equal(properties.get(id).script_fb_es, 'Texto editado por Sergio');
+  } finally {
+    globalThis.fetch = fetchAnterior;
+  }
+});
+
+test('las plantillas usan el mismo público en ambos idiomas y solo los rasgos confirmados', async () => {
+  const { datosAnuncio, generarTextos } = await import('../app/api/admin/textos/generador.ts');
+  const apiKey = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  try {
+    const ficha = { ciudad_zona: 'Mesa', precio: 235000, notas_extra: 'Piscina', arv: 270000 };
+    const datos = datosAnuncio(ficha, { publico: 'inversion', rasgos: ['techoNuevo'] });
+    const resultado = await generarTextos(datos);
+    assert.equal(resultado.origen, 'plantillas');
+    assert.match(resultado.textos.script_fb_es, /inversiones.*Mesa/s);
+    assert.match(resultado.textos.script_fb_es, /techo nuevo/i);
+    assert.match(resultado.textos.script_fb_en, /comparing deals/i);
+    assert.match(resultado.textos.script_fb_en, /new roof/i);
+    assert.doesNotMatch(JSON.stringify(resultado.textos), /piscina|Pool|270,000/i);
+    const individual = await generarTextos(datosAnuncio(ficha, { publico: 'vivienda' }), 'script_fb_en');
+    assert.deepEqual(Object.keys(individual.textos), ['script_fb_en']);
+    assert.match(individual.textos.script_fb_en, /call home/i);
+  } finally {
+    process.env.GEMINI_API_KEY = apiKey;
   }
 });

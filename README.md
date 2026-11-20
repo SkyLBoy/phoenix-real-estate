@@ -74,8 +74,11 @@ El catálogo lee de `propiedades_publicas`. La vista respeta RLS y expone los
 campos públicos solo para fichas publicadas. El formulario VIP conserva la
 inserción anónima y su listado queda protegido.
 
-Configura `NEXT_PUBLIC_WHATSAPP_ASESOR` como el número del vendedor con código
-de país, solo dígitos. Sin la variable, se conserva el número de prueba.
+En Vercel, configura `NEXT_PUBLIC_WHATSAPP_ASESOR` en **Production** con el
+número internacional real de Sergio y vuelve a desplegar. La compilación de
+producción verifica el formato y descarta el antiguo número de ejemplo. En
+desarrollo y Preview puedes dejarlo pendiente y usar el acceso a la Lista VIP.
+Comprueba desde un celular que WhatsApp abra el chat correcto antes de difundirlo.
 
 ## Fotos de Google Drive
 
@@ -97,7 +100,9 @@ el servidor. [Configuración de claves](https://docs.cloud.google.com/docs/authe
 El selector admite JPEG, PNG, WebP, GIF y AVIF que Drive muestre en el primer
 nivel. **Usar de portada** incluye esa imagen en la selección. Se puede
 descargar cada original desde el selector o la ficha guardada. La ficha pública
-muestra la portada y mantiene el enlace a la carpeta completa.
+muestra la portada y mantiene el enlace a la carpeta completa. También puedes
+descargar los originales seleccionados en un solo ZIP desde el selector o
+desde el inventario (hasta 60 fotos, 24 MB por archivo y 80 MB por selección).
 
 ## Generar y aprobar textos
 
@@ -108,7 +113,9 @@ Los textos existentes permanecen guardados y requieren su primera aprobación.
 En el inventario de `/admin`, abre **Textos de la propiedad**. Marca las
 condiciones confirmadas para esa ficha y genera los cuatro borradores. Edita
 y guarda cada texto, apruébalo y copia la versión final para publicar
-manualmente. Si vuelves a generar, el panel pide confirmar el reemplazo.
+manualmente. Elige el público y las características confirmadas que quieras
+destacar en español e inglés. Puedes regenerar un solo canal. Si cambias los
+datos compartidos, las demás piezas conservan su redacción y regresan a revisión.
 
 Se reutiliza `GEMINI_API_KEY`. Si falta la clave o Gemini no devuelve cuatro
 textos válidos, se usan plantillas con las condiciones confirmadas. Ambos
@@ -126,7 +133,27 @@ confirmación, una propiedad disponible permanece visible como **Por
 confirmar**. Cuando cambia a **En contrato** o **Ya no disponible**, su ficha
 sigue abriendo con el estado y acceso a otras propiedades. **Volver a
 disponible** confirma la fecha y devuelve la ficha al catálogo con el mismo
-enlace.
+enlace. Desde la ficha histórica se puede consultar por una casa similar. Si
+hay opciones confirmadas en las últimas 72 horas, la página muestra hasta dos,
+priorizando el mismo ZIP y luego la cercanía de precio dentro de la zona.
+
+### Actualización de zona pública y portadas
+
+Sobre la base existente, aplica las siguientes migraciones en orden desde el SQL Editor.
+
+1. `supabase/migrations/20261120001100_zona_y_disponibilidad.sql`. Incluye
+   consultas de inspección. Las fichas publicadas con zona inválida vuelven a
+   borrador con el mismo ID. Las disponibles cuya confirmación anterior
+   coincidía exactamente con la publicación quedan pendientes de verificar.
+   Las confirmaciones posteriores se conservan.
+2. `supabase/migrations/20261120001200_portada_optimizada.sql`. Guarda la
+   portada revisada de Drive en formato WebP junto con la publicación. Las
+   portadas de Drive anteriores se copian la primera vez que se consultan si
+   Google aún permite leerlas. Las portadas por URL externa siguen usando esa URL.
+
+Al publicar verás la zona que recibirá el visitante. Marca la confirmación de
+disponibilidad cuando acabes de verificarla con el proveedor. El inventario
+muestra primero una cola de fichas por confirmar, ordenada por antigüedad.
 
 ## Corregir el precio de una ficha publicada
 

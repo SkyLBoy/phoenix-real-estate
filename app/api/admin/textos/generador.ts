@@ -1,6 +1,6 @@
 import { ApiError, GoogleGenAI, Type } from '@google/genai';
 import {
-  canalesTexto, condicionesTexto, MAX_TEXTO, requisitosTextos,
+  canalesTexto, clavesCondiciones, clavesRasgos, MAX_TEXTO, publicosTexto, rasgosPublicos, requisitosTextos,
   type CanalTexto, type CondicionesTexto,
 } from '../../../../lib/textos-propiedad';
 
@@ -13,7 +13,7 @@ export function validarCondiciones(valor: unknown): CondicionesTexto {
   if (typeof valor !== 'object' || Array.isArray(valor)) throw new Error('Revisa las condiciones marcadas');
   const entrada = valor as Record<string, unknown>;
   const condiciones: CondicionesTexto = {};
-  for (const campo of Object.keys(condicionesTexto) as (keyof typeof condicionesTexto)[]) {
+  for (const campo of clavesCondiciones) {
     if (entrada[campo] === true) condiciones[campo] = true;
     else if (entrada[campo] !== undefined && entrada[campo] !== false) throw new Error('Revisa las condiciones marcadas');
   }
@@ -23,6 +23,21 @@ export function validarCondiciones(valor: unknown): CondicionesTexto {
       throw new Error('Indica un enganche mayor que 0 y de hasta 100%');
     }
     condiciones.enganche = entrada.enganche;
+  }
+  if (entrada.publico != null) {
+    if (typeof entrada.publico !== 'string' || !Object.hasOwn(publicosTexto, entrada.publico)) {
+      throw new Error('Elige uno de los públicos de la ficha');
+    }
+    if (entrada.publico !== 'mixto') condiciones.publico = entrada.publico as keyof typeof publicosTexto;
+  }
+  if (entrada.rasgos != null) {
+    const rasgos = entrada.rasgos;
+    if (!Array.isArray(rasgos) || !rasgos.every((rasgo) => typeof rasgo === 'string' && Object.hasOwn(rasgosPublicos, rasgo))) {
+      throw new Error('Selecciona características públicas de la lista');
+    }
+    const confirmados = clavesRasgos.filter((rasgo) => rasgos.includes(rasgo));
+    if (confirmados.length > 2) throw new Error('Elige hasta dos características para destacar.');
+    if (confirmados.length) condiciones.rasgos = confirmados;
   }
   return condiciones;
 }
@@ -39,19 +54,19 @@ export function datosAnuncio(ficha: FichaAnuncio, condiciones: CondicionesTexto)
   if (!precio || requisitosTextos(ficha).length) return null;
   const lote = typeof ficha.lot_size === 'string' && /^\d[\d,.]*\s*(?:sq\.?\s*ft\.?|sqft|ft²|acres?)?$/i.test(ficha.lot_size)
     ? ficha.lot_size : undefined;
+  const { publico = 'mixto', rasgos = [], incluirArv, ...comerciales } = condiciones;
   return {
     zona,
     precio,
-    arv: condiciones.incluirArv ? numeroPublico(ficha.arv) : undefined,
+    arv: incluirArv ? numeroPublico(ficha.arv) : undefined,
     recamaras: numeroPublico(ficha.beds),
     banos: numeroPublico(ficha.baths),
     superficie: numeroPublico(ficha.sqft),
     lote,
     anio: numeroPublico(ficha.year_built),
-    condiciones: {
-      ...condiciones,
-      incluirArv: undefined,
-    },
+    publico,
+    rasgos: rasgos.map((rasgo) => rasgosPublicos[rasgo]),
+    condiciones: comerciales,
   };
 }
 
@@ -69,7 +84,7 @@ function plantillas(datos: DatosAnuncio): Record<CanalTexto, string> {
     datos.anio != null && `Year Built: ${datos.anio}`,
   ].filter(Boolean).join('\n');
   const es = [
-    c.habitable && c.paraFlippers && 'Casa habitable',
+    c.habitable && 'Casa habitable',
     c.contado && 'Compra de contado disponible',
     c.financiamiento && 'Financiamiento privado disponible',
     c.itin && 'Se acepta ITIN',
@@ -88,30 +103,36 @@ function plantillas(datos: DatosAnuncio): Record<CanalTexto, string> {
   ].filter(Boolean).map((condicion) => `✅ ${condicion}`).join('\n');
   const arv = datos.arv ? `ARV: ${usd(datos.arv)}` : '';
   const unir = (...lineas: string[]) => lineas.filter(Boolean).join('\n');
-  const aperturaEs = c.paraFlippers
-    ? `🏡 ¿Buscas tu próximo Fix & Flip en ${datos.zona}?`
-    : c.habitable
-      ? `🏡 ¡Te tengo una casa habitable en ${datos.zona}!`
-      : c.financiamiento
-        ? `🏡 ¿Buscas casa en ${datos.zona}? Pregúntame por el financiamiento privado.`
-        : `🏡 ¡Te tengo una casa en ${datos.zona}! ¿La quieres conocer?`;
-  const aperturaEn = c.paraFlippers
-    ? `🏡 Looking for your next fix-and-flip in ${datos.zona}?`
-    : `🏡 Buying in ${datos.zona}? Here are the numbers.`;
+  const ganchos = {
+    vivienda: [`🏡 ¿Buscas casa para vivir en ${datos.zona}?`, `🏡 Looking for a place to call home in ${datos.zona}?`],
+    inversion: [`🏡 ¿Estás comparando inversiones en ${datos.zona}? Revisa las cifras de esta casa.`, `🏡 Comparing deals in ${datos.zona}? Take a look at these numbers.`],
+    mixto: [`🏡 Te tengo una casa en ${datos.zona}. ¿La quieres conocer?`, `🏡 Take a look at this home in ${datos.zona}.`],
+  };
+  const [aperturaEs, aperturaEn] = ganchos[datos.publico];
+  const destacadosEs = datos.rasgos.map((rasgo) => rasgo.es).join(' · ');
+  const destacadosEn = datos.rasgos.map((rasgo) => rasgo.en).join(' · ');
   const secciones = (...partes: string[]) => partes.filter(Boolean).join('\n\n');
   return {
     script_fb_es: secciones(
-      aperturaEs, unir(`Price: ${precio}`, arv, specs), es,
+      unir(aperturaEs, destacadosEs && `✨ ${destacadosEs}`),
+      unir(`Price: ${precio}`, arv, specs), es,
+      c.paraFlippers && datos.publico !== 'vivienda' ? '🔨 Pregúntame por esta opción para Fix & Flip.' : '',
       c.asesoria ? '💡 Te acompaño durante el proceso de compra.' : '',
       '📲 Escríbeme para ver fotos y coordinar una visita.',
     ),
     script_fb_en: secciones(
-      aperturaEn, unir(`Asking price: ${precio}`, arv, specs), en,
+      unir(aperturaEn, destacadosEn && `✨ ${destacadosEn}`),
+      unir(`Asking price: ${precio}`, arv, specs), en,
+      c.paraFlippers && datos.publico !== 'vivienda' ? '🔨 Ask me about this fix-and-flip option.' : '',
       c.asesoria ? '💡 I can guide you through the buying process.' : '',
       '📲 Message me for photos and to schedule a walkthrough.',
     ),
-    script_wa_vip: unir(`📍 *${datos.zona}* · *${precio}*`, datos.recamaras && datos.banos ? `${datos.recamaras} recámaras · ${datos.banos} baños` : '', '¿Te interesa? Respóndeme y te paso las fotos.'),
-    script_filtro_curiosos: `¡Hola! ¿Te interesa la de ${datos.zona} por ${precio}? ¿La estás buscando para vivir o para invertir?`,
+    script_wa_vip: unir(`📍 *${datos.zona}* · *${precio}*`, datos.rasgos[0]?.es ?? (datos.recamaras && datos.banos ? `${datos.recamaras} recámaras · ${datos.banos} baños` : ''), '¿Te interesa? Respóndeme y te paso las fotos.'),
+    script_filtro_curiosos: `¡Hola! Tengo tu mensaje sobre la de ${datos.zona} por ${precio}. ${{
+      vivienda: '¿Qué te gustaría ver primero de la casa?',
+      inversion: '¿Qué dato te falta para evaluar la compra?',
+      mixto: '¿La estás buscando para vivir o para invertir?',
+    }[datos.publico]}`,
   };
 }
 
@@ -121,7 +142,8 @@ function incluyeAfirmacionesSinRespaldo(texto: string) {
     || /\b(?:financiamiento|credito|prestamo)\s+(?:bancario|tradicional|convencional)|\b(?:bank|conventional|standard|traditional)\s+(?:financing|loan|mortgage)|\b(?:necesita|requiere|ocupa)\s+(?:(?:algunos?|varios?|unas?|de)\s+)?(?:arreglos?|reparaciones?|remodelacion|renovacion)|\b(?:needs?|requires?|requiring)\s+(?:(?:some|minor|major|a few)\s+)?(?:repairs?|renovations?|work|fixes|tlc)/u.test(normalizado);
 }
 
-export async function generarTextos(datos: DatosAnuncio) {
+export async function generarTextos(datos: DatosAnuncio, canal?: CanalTexto) {
+  const solicitados = canal ? [canal] : canalesTexto;
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) console.warn('[Textos Gemini] Falta configurar GEMINI_API_KEY.');
   if (apiKey) {
@@ -131,8 +153,9 @@ Para Facebook, escribe con el ritmo de un vendedor que publica para su comunidad
 Referencia de VOZ, no de datos: «🏡 ¡Te tengo una casa en [zona]! ¿Estás buscando dónde hacer tu primer Fix & Flip?» Solo usa el ángulo Fix & Flip si está confirmado para esa ficha. Otro cierre de referencia: «📲 Mándame mensaje y te paso las fotos. ¿En qué parte de Phoenix estás buscando?». Adapta la apertura a cada casa y evita repetir el ejemplo de forma literal.
 Elige para cada canal el dato confirmado más relevante. Abre con ese dato, una pregunta concreta o dos cifras útiles. Evita ganchos genéricos como «gran oportunidad» y «no dejes pasar». Alterna entre pregunta y afirmación según el dato; evita que las cuatro piezas comiencen igual.
 
-- script_fb_es: habla a quien busca vivienda. Destaca las recámaras, el espacio o una condición de compra confirmada. Usa el estilo del vendedor: apertura personal, bloque escaneable de precio y características, y una invitación a pedir fotos o coordinar visita.
-- script_fb_en: habla a un inversionista. Abre con precio y ARV únicamente si el ARV está confirmado; de lo contrario, usa una característica física útil. Presenta el ARV como estimación y evita inferir utilidad, reparaciones o rentabilidad.
+El público seleccionado en «publico» es el mismo en ambos idiomas. Para vivienda destaca un rasgo confirmado que el comprador pueda imaginar al visitar. Para inversión presenta cifras confirmadas, con el ARV como estimación si está disponible. Para un público mixto combina una característica física y el precio. Usa «rasgos» como detalles confirmados para distinguir la publicación. Evita inferir utilidad, reparaciones o rentabilidad.
+- script_fb_es: anuncio en español con apertura personal, bloque escaneable de cifras y una invitación a pedir fotos o coordinar visita.
+- script_fb_en: anuncio en inglés natural con una apertura propia, datos escaneables y una invitación a conversar.
 - script_wa_vip: mensaje individual breve, de dos o tres líneas. Incluye zona y precio, a lo sumo un dato adicional y una invitación a responder.
 - script_filtro_curiosos: contesta en tono de conversación; identifica la ficha y haz una sola pregunta útil, como si busca vivienda o inversión. Evita formato de anuncio, bloques y listas.
 
@@ -146,6 +169,7 @@ Reglas literales para las condiciones del JSON:
 - ITIN: si se confirma, expresa que se acepta ITIN como condición comercial. Evita presentarlo como un tipo de crédito o como una garantía de aprobación.
 
 Omite datos ausentes. Usa solo los hechos y condiciones confirmadas del JSON. Evita prometer aprobación, enganches o plazos no confirmados, o inventar el estado del inmueble, cercanía a servicios, fotos, enlaces o la dirección exacta. Usa únicamente la ciudad o el ZIP para la ubicación.
+Redacta solo estos canales: ${solicitados.join(', ')}.
 Datos públicos: ${JSON.stringify(datos)}`;
 
     for (const modelo of ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.8-flash']) {
@@ -158,14 +182,14 @@ Datos públicos: ${JSON.stringify(datos)}`;
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
-              properties: Object.fromEntries(canalesTexto.map((canal) => [canal, { type: Type.STRING }])),
-              required: canalesTexto,
-              propertyOrdering: canalesTexto,
+              properties: Object.fromEntries(solicitados.map((nombre) => [nombre, { type: Type.STRING }])),
+              required: solicitados,
+              propertyOrdering: solicitados,
             },
           },
         });
         const json = JSON.parse(respuesta.text ?? '');
-        const borradores = canalesTexto.map((canal) => {
+        const borradores = solicitados.map((canal) => {
           const texto = json?.[canal];
           return [canal, typeof texto === 'string' ? texto.trim() : ''] as const;
         });
@@ -185,5 +209,6 @@ Datos públicos: ${JSON.stringify(datos)}`;
       }
     }
   }
-  return { textos: plantillas(datos), origen: 'plantillas' as const };
+  const respaldo = plantillas(datos);
+  return { textos: canal ? { [canal]: respaldo[canal] } : respaldo, origen: 'plantillas' as const };
 }

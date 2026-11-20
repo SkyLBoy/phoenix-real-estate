@@ -1,3 +1,5 @@
+import { esZonaPublica } from './zona-publica';
+
 export const textosPropiedad = {
   script_fb_es: 'Facebook en español',
   script_fb_en: 'Facebook en inglés',
@@ -18,10 +20,37 @@ export const condicionesTexto = {
   asesoria: 'Ofrece acompañamiento durante el proceso',
   incluirArv: 'Incluir ARV confirmado',
 } as const;
+export const clavesCondiciones = Object.keys(condicionesTexto) as (keyof typeof condicionesTexto)[];
+
+export const publicosTexto = {
+  mixto: 'Compradores de vivienda e inversionistas',
+  vivienda: 'Compradores de vivienda',
+  inversion: 'Inversionistas',
+} as const;
+
+export const rasgosPublicos = {
+  piscina: { es: 'Piscina', en: 'Pool' },
+  techoNuevo: { es: 'Techo nuevo', en: 'New roof' },
+  patioCercado: { es: 'Patio cercado', en: 'Fenced yard' },
+  garaje: { es: 'Garaje', en: 'Garage' },
+  cocinaRenovada: { es: 'Cocina renovada', en: 'Renovated kitchen' },
+  unaPlanta: { es: 'Una sola planta', en: 'Single-story layout' },
+} as const;
+export type RasgoPublico = keyof typeof rasgosPublicos;
+export const clavesRasgos = Object.keys(rasgosPublicos) as RasgoPublico[];
 
 export type CondicionesTexto = Partial<Record<keyof typeof condicionesTexto, boolean>> & {
   enganche?: number;
+  publico?: keyof typeof publicosTexto;
+  rasgos?: RasgoPublico[];
 };
+
+export function mismasCondiciones(a: CondicionesTexto, b: CondicionesTexto) {
+  return a.enganche === b.enganche && (a.publico ?? 'mixto') === (b.publico ?? 'mixto')
+    && clavesCondiciones.every((campo) => Boolean(a[campo]) === Boolean(b[campo]))
+    && clavesRasgos.every((rasgo) => Boolean(a.rasgos?.includes(rasgo)) === Boolean(b.rasgos?.includes(rasgo)));
+}
+
 export type TextosFicha = Partial<Record<CanalTexto, string | null>>
   & Partial<Record<`${CanalTexto}_aprobado`, boolean>> & {
     textos_version: number;
@@ -34,7 +63,7 @@ export function requisitosTextos(ficha: { ciudad_zona?: unknown; precio?: unknow
   const faltantes: string[] = [];
   const zona = typeof ficha.ciudad_zona === 'string' ? ficha.ciudad_zona.trim() : '';
   if (!zona) faltantes.push('Falta guardar la ciudad o el código postal de la propiedad.');
-  else if (zona.length > 100 || !/^(?:\d{5}(?:-\d{4})?|\p{L}[\p{L}\p{M} .,’-]*(?: \d{5}(?:-\d{4})?)?)$/u.test(zona)) {
+  else if (!esZonaPublica(zona)) {
     faltantes.push('Usa una ciudad o código postal como zona pública, sin la dirección exacta.');
   }
   const precio = typeof ficha.precio === 'number' || typeof ficha.precio === 'string' ? Number(ficha.precio) : NaN;
