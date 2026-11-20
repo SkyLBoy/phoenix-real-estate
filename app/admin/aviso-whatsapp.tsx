@@ -34,7 +34,7 @@ export function CopiarEnlaceFicha({ ruta }: { ruta: string }) {
   );
 }
 
-export function AvisoWhatsApp({ ahora }: { ahora: number }) {
+export function AvisoWhatsApp({ ahora }: { ahora: number | null }) {
   const [resumen, setResumen] = useState<{
     fichas: Awaited<ReturnType<typeof cargarFichasDelAviso>>;
     origen: string;

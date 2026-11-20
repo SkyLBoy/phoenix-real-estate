@@ -15,10 +15,10 @@ const plazoConfirmacion = 72 * 60 * 60 * 1000;
 export function etiquetaDisponibilidad(
   estado: EstadoDisponibilidad,
   ultimaConfirmacion: string | null,
-  ahora: number,
+  ahora: number | null,
 ) {
   const confirmada = ultimaConfirmacion ? Date.parse(ultimaConfirmacion) : NaN;
-  if (estado === 'disponible' && (!Number.isFinite(confirmada) || ahora - confirmada >= plazoConfirmacion)) {
+  if (estado === 'disponible' && (!Number.isFinite(confirmada) || (ahora !== null && ahora - confirmada >= plazoConfirmacion))) {
     return 'Por confirmar';
   }
   return estadosDisponibilidad[estado];

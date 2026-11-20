@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import type { PerfilVip } from '@/lib/compradores-vip';
+import { paisesWhatsApp, type PaisWhatsApp, type PerfilVip } from '@/lib/compradores-vip';
 import { etiquetaDisponibilidad } from '@/lib/disponibilidad';
 import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import { supabase } from '@/lib/supabase';
@@ -15,7 +15,8 @@ import {
   FolderOpen,
   MessageCircle,
   CheckCircle2,
-  ShieldCheck,
+  House,
+  Search,
 } from 'lucide-react';
 
 export default function CatalogoPublico() {
@@ -27,6 +28,7 @@ export default function CatalogoPublico() {
   // Formulario de registro VIP
   const [nombre, setNombre] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [pais, setPais] = useState<PaisWhatsApp | ''>('');
   const [perfil, setPerfil] = useState<PerfilVip>('familia_vivienda');
   const [tieneItin, setTieneItin] = useState(false);
   const [leadEnviado, setLeadEnviado] = useState(false);
@@ -55,7 +57,7 @@ export default function CatalogoPublico() {
       const respuesta = await fetch('/api/compradores-vip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, whatsapp, perfil, tiene_itin: tieneItin }),
+        body: JSON.stringify({ nombre, whatsapp, pais, perfil, tiene_itin: tieneItin }),
       });
       if (!respuesta.ok) {
         const detalle = await respuesta.json().catch(() => null);
@@ -74,113 +76,114 @@ export default function CatalogoPublico() {
   );
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* Hero */}
-      <section className="border-b border-zinc-800 bg-zinc-900/60 px-4 py-10">
-        <div className="max-w-5xl mx-auto space-y-4">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full">
-            <ShieldCheck size={14} /> Oportunidades Off-Market en Arizona
-          </span>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-            Propiedades Disponibles Esta Semana
-          </h1>
-          <p className="text-zinc-400 max-w-2xl text-sm md:text-base">
-            Compra de contado para inversión o adquiere tu casa con{' '}
-            <strong className="text-zinc-200">ITIN / Pasaporte</strong> y desde{' '}
-            <strong className="text-zinc-200">15% de enganche</strong> con financiamiento
-            privado directo.
-          </p>
+    <main className="public-shell">
+      <header className="brand-bar">
+        <div className="public-wrap flex flex-wrap items-center justify-between gap-x-4">
+          <Link href="/" className="brand-lockup" aria-label="Sergio Orantes | House FixAndFlip">
+            <span className="brand-mark"><House size={20} aria-hidden="true" /></span>
+            <span><strong>Sergio Orantes</strong><small>House FixAndFlip</small></span>
+          </Link>
+          <a href="#lista-vip" className="inline-flex min-h-11 items-center text-sm font-semibold text-white">Lista VIP</a>
+        </div>
+      </header>
 
-          <div className="pt-2 max-w-md">
-            <input
-              type="text"
-              placeholder="Filtrar por ciudad o código postal (ej. Phoenix, 85033)..."
-              value={filtroZona}
-              onChange={(e) => setFiltroZona(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-400"
-            />
+      <section className="catalog-hero">
+        <div className="public-wrap grid gap-7 py-10 md:grid-cols-[1.45fr_1fr] md:items-end md:py-16">
+          <h1 className="catalog-title">Casas disponibles en Arizona</h1>
+          <div className="space-y-4">
+            <p className="max-w-sm leading-relaxed text-[var(--muted)]">
+              Explora propiedades para vivir o invertir y coordina una visita por WhatsApp.
+            </p>
+            <label className="catalog-search">
+              <Search size={19} className="shrink-0 text-[var(--blue)]" aria-hidden="true" />
+              <input type="search" aria-label="Filtrar por ciudad o código postal" placeholder="Ciudad o código postal"
+                value={filtroZona} onChange={(e) => setFiltroZona(e.target.value)} />
+            </label>
           </div>
         </div>
       </section>
 
-      {/* Grid de Propiedades */}
-      <section className="max-w-5xl mx-auto px-4 py-8">
+      <section aria-labelledby="inventario-publico" className="public-wrap py-8 md:py-11">
+        <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-3 border-b border-[var(--line)] pb-3">
+          <h2 id="inventario-publico" className="text-xl font-semibold tracking-tight">Propiedades</h2>
+          {!cargando && <p className="text-sm text-[var(--muted)]">{filtradas.length} {filtradas.length === 1 ? 'resultado' : 'resultados'}</p>}
+        </div>
         {cargando ? (
-          <p className="text-center text-zinc-500 py-12">Cargando inventario...</p>
+          <p className="public-panel text-center text-[var(--muted)] px-4 py-12">Cargando inventario...</p>
         ) : filtradas.length === 0 ? (
-          <p className="text-center text-zinc-500 py-12">
+          <p className="public-panel text-center text-[var(--muted)] px-4 py-12">
             No hay propiedades que coincidan con tu búsqueda en este momento.
           </p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {filtradas.map((prop) => {
               const portada = enlacePortada(prop);
               const porConfirmar = etiquetaDisponibilidad(prop.estado, prop.ultima_confirmacion, ahora) === 'Por confirmar';
               return (
                 <article
                   key={prop.id}
-                  className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col justify-between"
+                  className="property-card flex flex-col justify-between"
                 >
                   <div>
-                    <div className="h-44 bg-zinc-800 relative flex items-center justify-center overflow-hidden">
+                    <div className="listing-photo relative">
                       {portada ? (
+                        // Drive sirve la imagen desde la URL de portada existente.
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={portada}
                           loading="lazy"
                           alt={prop.ciudad_zona}
-                          className="w-full h-full object-cover"
+
                         />
                       ) : (
-                        <span className="text-xs text-zinc-500">
+                        <span className="text-sm text-[var(--muted)]">
                           Fotos disponibles en carpeta Drive
                         </span>
                       )}
-                      {porConfirmar && (
-                        <span className="absolute top-3 right-3 bg-amber-500 text-zinc-950 text-xs font-bold px-2.5 py-1 rounded-full">
-                          Por confirmar
-                        </span>
-                      )}
+                      <span className={`status-pill absolute top-3 right-3 ${porConfirmar ? 'status-pending' : ''}`}>
+                        {porConfirmar ? 'Por confirmar' : 'Disponible'}
+                      </span>
                     </div>
 
-                    <div className="p-4 space-y-3">
-                      <div className="flex items-center gap-1.5 text-xs text-amber-400 font-medium">
+                    <div className="space-y-4 px-5 pt-5 pb-4">
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-[var(--muted)]">
                         <MapPin size={14} /> {prop.ciudad_zona}
                       </div>
 
                       <div>
-                        <p className="text-2xl font-bold text-zinc-100">
+                        <p className="listing-price">
                           ${Number(prop.precio).toLocaleString()}{' '}
-                          <span className="text-xs font-normal text-zinc-400">USD</span>
+                          <span className="text-xs font-medium tracking-normal text-[var(--muted)]">USD</span>
                         </p>
                         {prop.arv && (
-                          <p className="text-xs text-emerald-400">
+                          <p className="listing-arv mt-1 text-sm font-semibold">
                             ARV Estimado: ${Number(prop.arv).toLocaleString()}
                           </p>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-4 text-xs text-zinc-300 border-t border-zinc-800 pt-3">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--line)] pt-3 text-sm text-[var(--muted)]">
                         {prop.beds && (
                           <span className="flex items-center gap-1">
-                            <BedDouble size={14} className="text-zinc-500" /> {prop.beds} Rec
+                            <BedDouble size={14} className="text-[var(--blue)]" /> {prop.beds} Rec
                           </span>
                         )}
                         {prop.baths && (
                           <span className="flex items-center gap-1">
-                            <Bath size={14} className="text-zinc-500" /> {prop.baths} Baños
+                            <Bath size={14} className="text-[var(--blue)]" /> {prop.baths} Baños
                           </span>
                         )}
                         {prop.sqft && (
                           <span className="flex items-center gap-1">
-                            <Maximize size={14} className="text-zinc-500" /> {prop.sqft} sqft
+                            <Maximize size={14} className="text-[var(--blue)]" /> {prop.sqft} sqft
                           </span>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 pt-0 space-y-2">
-                    <Link href={`/propiedades/${prop.id}`} className="block text-center text-sm text-amber-300">
+                  <div className="grid gap-2 px-5 pb-5">
+                    <Link href={`/propiedades/${prop.id}`} className="public-action">
                       Ver ficha
                     </Link>
                     {prop.drive_url && (
@@ -188,7 +191,7 @@ export default function CatalogoPublico() {
                         href={prop.drive_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
+                        className="public-action"
                       >
                         <FolderOpen size={15} /> Ver Fotos y Videos (Drive)
                       </a>
@@ -197,7 +200,7 @@ export default function CatalogoPublico() {
                       href={enlaceWhatsApp(prop)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
+                      className="public-action public-action-primary"
                     >
                       <MessageCircle size={15} /> Pedir Dirección y Cita
                     </a>
@@ -210,17 +213,17 @@ export default function CatalogoPublico() {
       </section>
 
       {/* Captura de Compradores VIP (independiente de Facebook) */}
-      <section className="max-w-xl mx-auto px-4 pb-16">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+      <section id="lista-vip" className="public-wrap scroll-mt-5 pb-12 md:pb-16">
+        <div className="public-panel max-w-2xl space-y-4 p-5 md:p-7">
           <h2 className="text-xl font-bold">
-            Recibe las casas nuevas antes que en Facebook
+            Lista prioritaria de compradores
           </h2>
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-[var(--muted)]">
             Registro opcional. Al inscribirte, aceptas que el vendedor te contacte por WhatsApp con oportunidades inmobiliarias.
           </p>
 
           {leadEnviado ? (
-            <div className="bg-emerald-950/40 border border-emerald-800 text-emerald-300 p-4 rounded-xl flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800">
               <CheckCircle2 size={18} /> ¡Listo! Ya quedaste registrado en nuestra lista
               prioritaria.
             </div>
@@ -235,44 +238,47 @@ export default function CatalogoPublico() {
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 required
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
+                className="vip-input"
               />
-              <input
-                type="tel"
-                aria-label="Tu número de WhatsApp"
-                autoComplete="tel"
-                maxLength={40}
-                placeholder="Tu número de WhatsApp (ej. 602-555-1234)"
-                value={whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-                required
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-              />
+              <div className="grid gap-2 sm:grid-cols-[auto_1fr]">
+                <select aria-label="País del número de WhatsApp" required value={pais}
+                  onChange={(event) => setPais(event.target.value as PaisWhatsApp | '')}
+                  className="vip-input">
+                  <option value="" disabled>País y lada</option>
+                  {Object.entries(paisesWhatsApp).map(([codigo, { etiqueta }]) => (
+                    <option key={codigo} value={codigo}>{etiqueta}</option>
+                  ))}
+                </select>
+                <input type="tel" aria-label="Tu número de WhatsApp" autoComplete="tel-national"
+                  maxLength={40} placeholder="Número de 10 dígitos" value={whatsapp} required
+                  onChange={(event) => setWhatsapp(event.target.value)}
+                  className="vip-input" />
+              </div>
               <select
                 aria-label="Perfil de comprador"
                 value={perfil}
                 onChange={(e) =>
                   setPerfil(e.target.value as PerfilVip)
                 }
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
+                className="vip-input"
               >
                 <option value="familia_vivienda">Busco casa para vivir (ITIN / Enganche)</option>
                 <option value="inversionista">Soy inversionista (Cash / Fix & Flip)</option>
               </select>
-              <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+              <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-[var(--muted)]">
                 <input
                   type="checkbox"
                   checked={tieneItin}
                   onChange={(e) => setTieneItin(e.target.checked)}
-                  className="accent-amber-500"
+                  className="size-5 shrink-0 accent-[var(--blue)]"
                 />
                 Cuento con ITIN / Pasaporte o enganche listo
               </label>
-              {errorLead && <p role="alert" className="text-sm text-red-300">{errorLead}</p>}
+              {errorLead && <p role="alert" className="text-sm text-red-700">{errorLead}</p>}
               <button
                 type="submit"
                 disabled={enviandoLead}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold py-2.5 rounded-lg text-sm transition cursor-pointer"
+                className="public-action public-action-primary w-full"
               >
                 {enviandoLead ? 'Guardando…' : 'Unirme a la Lista Prioritaria'}
               </button>

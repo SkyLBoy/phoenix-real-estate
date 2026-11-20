@@ -145,5 +145,5 @@ migración bloquea el acceso directo del navegador a la tabla. El formulario
 público de esta versión registra a los compradores mediante el servidor.
 
 En `/admin`, pulsa **Ver compradores** y usa **Abrir WhatsApp** para dar
-seguimiento manual. Los números locales de diez dígitos usan el código de
-EE. UU. (+1). Para otros países, incluye el signo + y el código de país.
+seguimiento manual. El formulario pide elegir México (+52) o Estados Unidos (+1) para
+números locales de diez dígitos.

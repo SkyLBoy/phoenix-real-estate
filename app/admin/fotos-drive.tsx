@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
 
 type AbrirFoto = (foto: FotoDrive, signal?: AbortSignal) => Promise<Blob>;
@@ -12,6 +12,7 @@ export function VistaFotoDrive({ foto, abrir, alCargar }: {
 }) {
   const [imagen, setImagen] = useState<{ url: string; id: string } | null>(null);
   const [error, setError] = useState<{ id: string; mensaje: string } | null>(null);
+  const [usarEnlaceDirecto, setUsarEnlaceDirecto] = useState(false);
 
   useEffect(() => {
     if (foto.miniaturaUrl) return;
@@ -32,8 +33,18 @@ export function VistaFotoDrive({ foto, abrir, alCargar }: {
     };
   }, [foto, abrir]);
 
-  if (error?.id === foto.id) return <p role="alert" className="text-red-300">{error.mensaje}</p>;
-  const src = foto.miniaturaUrl ?? (imagen?.id === foto.id ? imagen.url : null);
+  if (error?.id === foto.id) {
+    const enlace = new URL(`https://drive.google.com/file/d/${encodeURIComponent(foto.id)}/view`);
+    if (foto.resourceKey) enlace.searchParams.set('resourcekey', foto.resourceKey);
+    return (
+      <div className="space-y-1">
+        <p role="alert" className="text-red-300">{error.mensaje}</p>
+        <a href={enlace.href} target="_blank" rel="noopener noreferrer" className="text-amber-300">Abrir archivo en Drive</a>
+      </div>
+    );
+  }
+  const miniatura = usarEnlaceDirecto ? foto.miniaturaUrl : foto.miniaturaDrive ?? foto.miniaturaUrl;
+  const src = miniatura ?? (imagen?.id === foto.id ? imagen.url : null);
   if (!src) return <p role="status">Cargando foto…</p>;
 
   return (
@@ -41,7 +52,10 @@ export function VistaFotoDrive({ foto, abrir, alCargar }: {
       {/* La vista previa usa una URL local creada desde la respuesta privada. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={src} alt={foto.name} onLoad={alCargar}
-        onError={() => setError({ id: foto.id, mensaje: 'Drive no pudo mostrar esta foto. Revisa que el archivo sea público.' })} className="max-h-80 w-full rounded-lg object-contain" />
+        onError={() => {
+          if (foto.miniaturaDrive && foto.miniaturaUrl && !usarEnlaceDirecto) setUsarEnlaceDirecto(true);
+          else setError({ id: foto.id, mensaje: 'Drive no devolvió una imagen para esta vista. Abre el archivo en Drive para verificarlo.' });
+        }} className="max-h-[65vh] w-full rounded-lg object-contain" />
       <figcaption className="break-all text-sm text-zinc-300">{foto.name}</figcaption>
     </figure>
   );
@@ -109,6 +123,7 @@ export function SelectorFotosDrive({
   listar: (carpeta: string) => Promise<FotoDrive[]>;
   abrir: AbrirFoto;
 }) {
+  const idVista = useId();
   const [fotos, setFotos] = useState<FotoDrive[] | null>(null);
   const [vista, setVista] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -147,33 +162,53 @@ export function SelectorFotosDrive({
           </button>
         </div>
       )}
+      {fotoVista && (
+        <div id={idVista} className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setVista(null)} className="text-amber-300">Cerrar vista</button>
+          </div>
+          <VistaFotoDrive key={fotoVista.id} foto={fotoVista} abrir={abrir} />
+        </div>
+      )}
       {visibles.length > 0 && (
-        <ul className="max-h-72 divide-y divide-zinc-800 overflow-auto">
+        <ul className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
           {visibles.map((foto) => {
             const elegida = seleccionadas.some(({ id }) => id === foto.id);
+            const miniatura = foto.miniaturaDrive ?? foto.miniaturaUrl;
             return (
-              <li key={foto.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2">
-                <label className="flex min-w-0 items-center gap-2">
-                  <input type="checkbox" checked={elegida} onChange={(event) => alSeleccionar(event.target.checked
-                    ? [...seleccionadas, foto]
-                    : seleccionadas.filter(({ id }) => id !== foto.id))} />
-                  <span className="break-all">{foto.name}</span>
-                </label>
-                <button type="button" onClick={() => setVista(vista === foto.id ? null : foto.id)}
-                  aria-label={`Revisar ${foto.name}`} className="text-amber-300">
-                  {vista === foto.id ? 'Cerrar vista' : 'Ver foto'}
+              <li key={foto.id} className={`min-w-0 overflow-hidden rounded-xl border bg-zinc-950 ${elegida ? 'border-amber-500' : 'border-zinc-800'}`}>
+                <button type="button" onClick={() => {
+                  setVista(foto.id);
+                  requestAnimationFrame(() => document.getElementById(idVista)?.scrollIntoView({ block: 'nearest' }));
+                }} aria-label={`Ampliar ${foto.name}`}
+                  className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-zinc-800">
+                  <span className="px-2 text-zinc-300">Ver foto</span>
+                  {miniatura && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={miniatura} src={miniatura} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover"
+                      onError={(event) => { event.currentTarget.hidden = true; }} />
+                  )}
                 </button>
-                <button type="button" onClick={() => alElegirPortada(foto)} disabled={portada === foto.id}
-                  aria-label={`Usar ${foto.name} como portada`} className="text-amber-300 disabled:text-zinc-400">
-                  {portada === foto.id ? 'Portada elegida' : 'Usar de portada'}
-                </button>
-                {elegida && <DescargarFotoDrive foto={foto} abrir={abrir} />}
+                <div className="space-y-2 p-3">
+                  <label className="flex min-w-0 items-center gap-2">
+                    <input type="checkbox" checked={elegida} onChange={(event) => alSeleccionar(event.target.checked
+                      ? [...seleccionadas, foto]
+                      : seleccionadas.filter(({ id }) => id !== foto.id))} />
+                    <span className="break-all">{foto.name}</span>
+                  </label>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    <button type="button" onClick={() => alElegirPortada(foto)} disabled={portada === foto.id}
+                      aria-label={`Usar ${foto.name} como portada`} className="text-amber-300 disabled:text-zinc-400">
+                      {portada === foto.id ? 'Portada elegida' : 'Usar de portada'}
+                    </button>
+                    {elegida && <DescargarFotoDrive foto={foto} abrir={abrir} />}
+                  </div>
+                </div>
               </li>
             );
           })}
         </ul>
       )}
-      {fotoVista && <VistaFotoDrive key={fotoVista.id} foto={fotoVista} abrir={abrir} />}
     </section>
   );
 }

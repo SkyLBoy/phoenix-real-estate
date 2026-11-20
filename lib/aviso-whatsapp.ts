@@ -26,7 +26,7 @@ export async function cargarFichasDelAviso(): Promise<FichaAviso[]> {
 
 const precioUsd = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 
-export function prepararAvisoWhatsApp(fichas: FichaAviso[], origen: string, ahora: number) {
+export function prepararAvisoWhatsApp(fichas: FichaAviso[], origen: string, ahora: number | null) {
   const confirmadas: string[] = [];
   const porConfirmar: string[] = [];
 

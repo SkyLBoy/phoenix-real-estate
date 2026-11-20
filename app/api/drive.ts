@@ -49,6 +49,14 @@ function enlaceMiniatura(id: string, key?: string) {
   return url;
 }
 
+function miniaturaDelListado(valor?: string) {
+  if (!valor || !URL.canParse(valor)) return undefined;
+  const url = new URL(valor);
+  if (url.origin !== 'https://lh3.googleusercontent.com' || url.username || url.password
+    || !url.pathname.startsWith('/drive-storage/')) return undefined;
+  return url.href;
+}
+
 export function fotoParaPanel(foto: FotoDrive): FotoDrivePanel {
   if (process.env.GOOGLE_DRIVE_API_KEY?.trim()) return foto;
   const descarga = new URL('https://drive.google.com/uc');
@@ -92,9 +100,11 @@ async function listarCarpetaPublica(id: string, key?: string): Promise<FotoDrive
     const tipo = icono?.match(/\/type\/([^?#]+)$/)?.[1];
     if (tipo ? !tiposImagen.has(tipo) : !/\.(?:jpe?g|png|webp|gif|avif)$/i.test(name)) continue;
     const resourceKey = archivo.searchParams.get('resourcekey');
+    const miniaturaDrive = miniaturaDelListado(entrada.querySelector('.flip-entry-thumb img')?.getAttribute('src'));
     fotos.set(fileId, {
       id: fileId,
       name,
+      ...(miniaturaDrive ? { miniaturaDrive } : {}),
       ...(identificadorDrive(resourceKey) ? { resourceKey } : {}),
     });
   }
@@ -139,13 +149,21 @@ export async function listarFotosDrive(enlace: string): Promise<FotoDrive[]> {
   return fotos;
 }
 
-export async function abrirFotoDrive(id: string, key?: string) {
+function portadaDriveEnAltaResolucion(miniatura?: string) {
+  const enlace = miniaturaDelListado(miniatura);
+  if (!enlace) return undefined;
+  const url = new URL(enlace);
+  url.pathname = url.pathname.replace(/=s\d+$/, '=s1600');
+  return url.href;
+}
+
+export async function abrirFotoDrive(id: string, key?: string, miniaturaDrive?: string) {
   if (!identificadorDrive(id) || (key !== undefined && !identificadorDrive(key))) {
     throw new ErrorDrive('Identificador de foto inválido', 400);
   }
   if (!process.env.GOOGLE_DRIVE_API_KEY?.trim()) {
     return new Response(null, { status: 302, headers: {
-      Location: enlaceMiniatura(id, key).href,
+      Location: portadaDriveEnAltaResolucion(miniaturaDrive) ?? enlaceMiniatura(id, key).href,
       'Cache-Control': 'no-store',
     } });
   }

@@ -42,6 +42,7 @@ const compradores = [];
 const serviceCalls = [];
 const entradasGemini = [];
 let simularGeminiInvalido = false;
+let respuestaGeminiDePrueba;
 const fotoDrive = { id: 'foto-1', name: 'Sala.jpg', resourceKey: 'clave-foto' };
 const carpetaDrive = 'https://drive.google.com/drive/folders/carpeta-1?resourcekey=clave-carpeta';
 const property = { id: 'casa-1', ciudad_zona: 'Phoenix', estado: 'disponible' };
@@ -59,7 +60,7 @@ globalThis.fetch = async (input, init) => {
 
   if (url.hostname === 'generativelanguage.googleapis.com') {
     entradasGemini.push(await request.text());
-    const respuesta = simularGeminiInvalido ? { script_fb_es: 'Incompleto' } : scripts;
+    const respuesta = respuestaGeminiDePrueba ?? (simularGeminiInvalido ? { script_fb_es: 'Incompleto' } : scripts);
     return Response.json({
       candidates: [{ content: { parts: [{ text: JSON.stringify(respuesta) }] } }],
     });
@@ -79,6 +80,7 @@ globalThis.fetch = async (input, init) => {
         </a>
       </div>
       <div class="flip-entry"><a href="/file/d/foto-2/view">
+        <div class="flip-entry-thumb"><img src="https://lh3.googleusercontent.com/drive-storage/miniatura-fachada=s190"></div>
         <div class="flip-entry-title">Fachada.PNG</div>
       </a></div>
       <div class="flip-entry"><a href="/drive/folders/subcarpeta"><div class="flip-entry-title">Lote.jpg</div></a></div>
@@ -149,7 +151,7 @@ globalThis.fetch = async (input, init) => {
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades') {
     switch (request.method) {
       case 'GET': {
-        if (url.searchParams.get('select') === 'fotos_drive,portada_drive_id') {
+        if (url.searchParams.get('select') === 'fotos_drive,portada_drive_id,drive_url') {
           assert.equal(url.searchParams.get('publicada_en'), 'not.is.null');
           assert.equal(url.searchParams.get('estado'), 'neq.vendida');
           const ficha = properties.get(url.searchParams.get('id').slice(3));
@@ -460,6 +462,7 @@ test('sin clave, el panel lee Drive público y conserva las descargas y portadas
       },
       {
         id: 'foto-2', name: 'Fachada.PNG',
+        miniaturaDrive: 'https://lh3.googleusercontent.com/drive-storage/miniatura-fachada=s190',
         miniaturaUrl: 'https://lh3.googleusercontent.com/d/foto-2',
         descargaUrl: 'https://drive.google.com/uc?export=download&id=foto-2',
       },
@@ -474,7 +477,7 @@ test('sin clave, el panel lee Drive público y conserva las descargas y portadas
     } });
     assert.equal(guardado.status, 200);
     const { propiedad } = await guardado.json();
-    assert.deepEqual(propiedad.fotos_drive, [{ id: 'foto-2', name: 'Fachada.PNG' }]);
+    assert.deepEqual(propiedad.fotos_drive, [{ id: 'foto-2', name: 'Fachada.PNG', miniaturaDrive: fotos[1].miniaturaDrive }]);
     const inventario = await request(GET, 'GET', { token: seller });
     assert.deepEqual((await inventario.json()).propiedades.find(({ id }) => id === propiedad.id).fotos_drive, [fotos[1]]);
 
@@ -488,7 +491,7 @@ test('sin clave, el panel lee Drive público y conserva las descargas y portadas
     assert.equal(publicado.status, 200);
     const respuesta = await portada();
     assert.equal(respuesta.status, 302);
-    assert.equal(respuesta.headers.get('location'), fotos[1].miniaturaUrl);
+    assert.equal(respuesta.headers.get('location'), fotos[1].miniaturaDrive.replace('=s190', '=s1600'));
   } finally {
     process.env.GOOGLE_DRIVE_API_KEY = clave;
   }
@@ -698,7 +701,7 @@ test('el registro VIP es público y solo el operador autorizado puede consultar 
   const { POST: registrar } = await import('../app/api/compradores-vip/route.ts');
   const { GET: listar } = await import('../app/api/admin/compradores-vip/route.ts');
   const { chatComprador } = await import('../lib/compradores-vip.ts');
-  const registro = { nombre: '  Comprador de prueba  ', whatsapp: '(602) 555-0123', perfil: 'inversionista', tiene_itin: true };
+  const registro = { nombre: '  Comprador de prueba  ', whatsapp: '(602) 555-0123', pais: 'US', perfil: 'inversionista', tiene_itin: true };
 
   const publicar = (body) => registrar(new Request('https://panel.test/api/compradores-vip', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -726,8 +729,13 @@ test('el registro VIP es público y solo el operador autorizado puede consultar 
     hayMas: false,
   });
   assert.equal(chatComprador(datos.compradores[0].whatsapp), 'https://wa.me/16025550123');
-  assert.equal(chatComprador('+52 (662) 123-4567'), 'https://wa.me/526621234567');
-  assert.equal(chatComprador('602-555-0123'), 'https://wa.me/16025550123');
+  assert.equal(chatComprador('+52 (662) 123-4567'), 'https://wa.me/5216621234567');
+  assert.equal(chatComprador('602-555-0123'), null);
+  assert.equal(chatComprador('+5216621234567'), 'https://wa.me/5216621234567');
+  assert.equal((await publicar({ ...registro, pais: undefined })).status, 400);
+  assert.equal((await publicar({ ...registro, pais: 'US', whatsapp: '+526621234567' })).status, 400);
+  assert.equal((await publicar({ ...registro, pais: 'MX', whatsapp: '6621234567' })).status, 201);
+  assert.equal(compradores[0].whatsapp, '+526621234567');
   assert.equal(chatComprador('dato inválido'), null);
 });
 
@@ -753,4 +761,24 @@ test('la generación indica qué falta y funciona al completar zona y precio en 
   assert.equal((await respuesta.json()).textos.script_fb_es, scripts.script_fb_es);
   assert.equal(properties.get(id).publicada_en, null);
   assert.equal(properties.get(id).imagen_portada, null);
+});
+
+test('descarta que la casa requiere arreglos o admite crédito bancario cuando solo se confirmó financiamiento privado', async () => {
+  const { datosAnuncio, generarTextos } = await import('../app/api/admin/textos/generador.ts');
+  const datos = datosAnuncio({ ciudad_zona: 'Peoria AZ 85345', precio: 292000 }, {
+    financiamiento: true, arreglos: true, itin: true, enganche: 17,
+  });
+  for (const texto of ['La propiedad requiere algunos arreglos.', 'Aceptamos financiamiento bancario.',
+    'The property requires repairs.', 'Standard financing is available.']) {
+    respuestaGeminiDePrueba = { ...scripts, script_fb_es: texto };
+    try {
+      const resultado = await generarTextos(datos);
+      assert.equal(resultado.origen, 'plantillas');
+      assert.match(resultado.textos.script_fb_es, /Financiamiento privado disponible/);
+      assert.match(resultado.textos.script_fb_es, /Financiamiento para arreglos disponible/);
+      assert.doesNotMatch(resultado.textos.script_fb_es, /requiere|bancario/i);
+    } finally {
+      respuestaGeminiDePrueba = undefined;
+    }
+  }
 });

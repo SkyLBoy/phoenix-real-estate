@@ -8,9 +8,11 @@ export function EtiquetaDisponibilidad({ estado, ultimaConfirmacion }: {
   ultimaConfirmacion: string | null;
 }) {
   const ahora = useRelojDisponibilidad();
+  const etiqueta = etiquetaDisponibilidad(estado, ultimaConfirmacion, ahora);
+  const estilo = etiqueta === 'Por confirmar' ? 'status-pending' : estado !== 'disponible' ? 'status-inactive' : '';
   return (
-    <p className="font-medium text-amber-300" suppressHydrationWarning>
-      {etiquetaDisponibilidad(estado, ultimaConfirmacion, ahora)}
+    <p className={`status-pill ${estilo}`}>
+      {etiqueta}
     </p>
   );
 }

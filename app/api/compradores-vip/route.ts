@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../admin-access';
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const nombre = typeof body?.nombre === 'string' ? body.nombre.trim() : '';
-  const whatsapp = normalizarWhatsApp(body?.whatsapp);
+  const whatsapp = normalizarWhatsApp(body?.whatsapp, body?.pais);
   const perfil = body?.perfil;
   const tiene_itin = body?.tiene_itin;
 
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     || typeof perfil !== 'string' || !Object.hasOwn(perfilesVip, perfil)
     || typeof tiene_itin !== 'boolean') {
     return Response.json({
-      error: 'Revisa tu nombre, perfil y número de WhatsApp. Para números fuera de EE. UU., incluye + y el código de país.',
+      error: 'Revisa tu nombre, perfil y número de WhatsApp. Elige el país y escribe los 10 dígitos de tu número.',
     }, { status: 400 });
   }
 

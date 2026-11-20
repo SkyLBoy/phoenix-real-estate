@@ -114,7 +114,7 @@ export default function AdminPanel() {
 
   if (session === undefined) {
     return (
-      <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center" role="status">
+      <main className="admin-shell min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center" role="status">
         Comprobando sesión…
       </main>
     );
@@ -133,14 +133,15 @@ export default function AdminPanel() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-4">
+    <main className="admin-shell min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-4">
       <form
         onSubmit={iniciarSesion}
-        className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full space-y-4"
+        className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full space-y-4 sm:p-8"
       >
         <h1 className="flex items-center gap-2 text-amber-400 font-bold text-lg">
           <Lock size={20} /> Acceso privado
         </h1>
+        <p className="text-sm font-medium text-zinc-400">Sergio Orantes | House FixAndFlip</p>
         <label className="block space-y-1">
           <span className="text-sm">Correo electrónico</span>
           <input
@@ -420,7 +421,7 @@ function Inventario({
 
   if (accesoDenegado || propiedades === null) {
     return (
-      <main className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-4 p-4">
+      <main className="admin-shell min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-4 p-4">
         {errorOperacion ? (
           <p role="alert" className="text-sm text-red-300">{errorOperacion}</p>
         ) : (
@@ -445,14 +446,15 @@ function Inventario({
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 p-4 md:p-8">
-      <div className="max-w-5xl mx-auto space-y-8">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
+    <main className="admin-shell min-h-screen bg-zinc-950 text-zinc-100 p-4 md:p-8">
+      <div className="mx-auto max-w-6xl space-y-5 md:space-y-7">
+        <header className="admin-header flex flex-wrap items-center justify-between gap-5 p-5 md:p-7">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Building2 className="text-amber-400" /> Panel de Operaciones & IA
+            <p className="admin-brand">Sergio Orantes | House FixAndFlip</p>
+            <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight md:text-3xl">
+              <Building2 className="shrink-0 text-white" /> Panel de propiedades
             </h1>
-            <p className="text-sm text-zinc-400">
+            <p className="admin-subtitle mt-2 text-sm">
               Guarda borradores, revisa la portada y publica en el catálogo.
             </p>
           </div>
@@ -492,7 +494,7 @@ function Inventario({
             </label>
             <textarea
               id="bloque-datos"
-              rows={4}
+              rows={10}
               value={bloqueDatos}
               onChange={(event) => {
                 setBloqueDatos(event.target.value);
@@ -682,6 +684,14 @@ function Inventario({
           {propiedades.map((prop) => {
             const fotoPortada = prop.fotos_drive?.find(({ id }) => id === prop.portada_drive_id);
             const tienePortada = Boolean(fotoPortada || prop.imagen_portada);
+            const faltantesPublicacion = [
+              !prop.ciudad_zona?.trim() && 'zona pública',
+              !(Number(prop.precio) > 0) && 'precio mayor que cero',
+              !tienePortada && 'portada',
+            ].filter(Boolean);
+            const revisandoFicha = revisando === prop.id;
+            const puedeRevisar = faltantesPublicacion.length === 0 && editando !== prop.id;
+            const portadaPendiente = Boolean(fotoPortada && portadaCargada !== fotoPortada.id);
             const etiqueta = etiquetaDisponibilidad(prop.estado, prop.ultima_confirmacion, ahora);
             const actualizando = cambiosDisponibilidad.has(prop.id);
             const rutaFicha = `/propiedades/${encodeURIComponent(prop.id)}`;
@@ -692,7 +702,7 @@ function Inventario({
               >
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-800 pb-3">
                   <div>
-                    <span className="text-xs uppercase tracking-wider text-amber-400 font-semibold">
+                    <span className="text-sm font-semibold text-amber-400">
                       {prop.ciudad_zona}
                     </span>
                     <h3 className="text-lg font-bold text-zinc-100">
@@ -702,7 +712,7 @@ function Inventario({
                       </span>
                     </h3>
                     <p className="text-sm text-zinc-300">
-                      Precio: <strong>{prop.precio == null ? 'Pendiente' : `$${Number(prop.precio).toLocaleString()}`}</strong>
+                      Precio: <strong className="text-lg tabular-nums tracking-tight">{prop.precio == null ? 'Pendiente' : `$${Number(prop.precio).toLocaleString()}`}</strong>
                       {prop.arv && ` · ARV: $${Number(prop.arv).toLocaleString()}`}
                       {prop.beds && ` · ${prop.beds} bd`}
                       {prop.baths && ` / ${prop.baths} ba`}
@@ -743,7 +753,7 @@ function Inventario({
                         setRevisionAviso((revision) => revision + 1);
                       }} />
                     )}
-                    <p aria-live="polite" className={etiqueta === 'Por confirmar' ? 'font-semibold text-amber-300' : 'font-medium'}>
+                    <p aria-live="polite" className={`status-pill ${etiqueta === 'Por confirmar' ? 'status-pending' : prop.estado !== 'disponible' ? 'status-inactive' : ''}`}>
                       {actualizando ? 'Actualizando disponibilidad…' : etiqueta}
                     </p>
                     {etiqueta === 'Por confirmar' && (
@@ -768,14 +778,14 @@ function Inventario({
                   </div>
                 ) : (
                   <div className="space-y-3 text-sm">
-                    <p className="text-zinc-400">Borrador privado</p>
+                    <p className="status-pill status-inactive">Borrador privado</p>
                     <div className="flex flex-wrap gap-4">
                       <a href="#formulario-ficha" onClick={() => {
                         cargarFormulario(prop);
                         setRevisando(null);
                       }} className="text-amber-300">Editar borrador</a>
                       <button type="button"
-                        disabled={!prop.ciudad_zona || !prop.precio || !tienePortada || editando === prop.id}
+                        disabled={!puedeRevisar}
                         onClick={() => {
                           if (revisando !== prop.id) setPortadaCargada(null);
                           setRevisando(prop.id);
@@ -784,10 +794,24 @@ function Inventario({
                         Revisar portada
                       </button>
                     </div>
-                    {(!prop.ciudad_zona || !prop.precio || !tienePortada) && (
-                      <p className="text-zinc-400">Para publicar, guarda zona, precio y portada.</p>
-                    )}
-                    {revisando === prop.id && tienePortada && (
+                    <div className="space-y-2 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
+                      <button type="button"
+                        disabled={publicando || !puedeRevisar || !revisandoFicha || portadaPendiente}
+                        aria-describedby={`estado-publicacion-${prop.id}`}
+                        onClick={() => publicar(prop)}
+                        className="admin-publish min-h-11 w-full rounded-lg bg-amber-400 px-4 py-2 font-semibold text-zinc-950 disabled:opacity-60 sm:w-auto">
+                        {publicando && revisandoFicha ? 'Publicando…' : 'Confirmar revisión y publicar'}
+                      </button>
+                      <p id={`estado-publicacion-${prop.id}`} className="text-zinc-300">
+                        {faltantesPublicacion.length
+                          ? `Completa y guarda: ${faltantesPublicacion.join(', ')}.`
+                          : editando === prop.id ? 'Guarda los cambios del borrador para publicar.'
+                          : !revisandoFicha ? 'Pulsa Revisar portada para habilitar la publicación.'
+                          : portadaPendiente ? 'La portada debe cargar para que puedas revisarla.'
+                          : 'Revisa que la portada y la carpeta pública oculten la dirección exacta.'}
+                      </p>
+                    </div>
+                    {revisandoFicha && puedeRevisar && (
                       <div className="space-y-3">
                         <p>Abre la portada y comprueba que no muestre la dirección exacta.</p>
                         {fotoPortada ? (
@@ -801,11 +825,6 @@ function Inventario({
                           <a href={prop.drive_url} target="_blank" rel="noopener noreferrer"
                             className="block text-amber-300">Revisar carpeta pública de Drive</a>
                         )}
-                        <button type="button" disabled={publicando || Boolean(fotoPortada && portadaCargada !== fotoPortada.id)}
-                          onClick={() => publicar(prop)}
-                          className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-zinc-950 disabled:opacity-50">
-                          {publicando ? 'Publicando…' : 'Confirmar revisión y publicar'}
-                        </button>
                       </div>
                     )}
                   </div>

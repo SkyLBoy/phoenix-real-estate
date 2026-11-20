@@ -36,7 +36,7 @@ function EditorTexto({ canal, texto, aprobado, ocupado, enviar }: {
         <span className="block text-xs text-zinc-400">
           {cambio ? 'Cambios sin guardar' : aprobado ? 'Aprobado' : texto ? 'Pendiente de aprobación' : 'Sin texto'}
         </span>
-        <textarea value={borrador} rows={4} maxLength={MAX_TEXTO} disabled={ocupado}
+        <textarea value={borrador} rows={9} maxLength={MAX_TEXTO} disabled={ocupado}
           onChange={(event) => {
             setBorrador(event.target.value);
             setAvisoCopia('');
@@ -78,8 +78,8 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
       if (peticion.accion === 'generar') {
         setGeneraciones((total) => total + 1);
         setMensaje(resultado.origen === 'plantillas'
-          ? 'Borradores creados con plantillas. Revísalos antes de aprobar.'
-          : 'Borradores generados. Revísalos antes de aprobar.');
+          ? 'Se usaron plantillas de respaldo. El diagnóstico de Gemini queda en la terminal del servidor.'
+          : 'Borradores generados con Gemini. Revísalos antes de aprobar.');
       }
     } catch (error) {
       setFallo(error instanceof Error ? error.message : 'No se guardaron los cambios');
@@ -131,7 +131,7 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
       )}
       {mensaje && <p role="status" className="text-zinc-300">{mensaje}</p>}
       {fallo && <p role="alert" className="text-red-300">{fallo}</p>}
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         {canalesTexto.map((canal) => (
           <EditorTexto key={JSON.stringify([canal, ficha[canal], generaciones])}
             canal={canal} texto={ficha[canal] ?? ''} aprobado={ficha[`${canal}_aprobado`] === true}

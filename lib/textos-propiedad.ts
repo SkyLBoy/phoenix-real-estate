@@ -13,6 +13,9 @@ export const condicionesTexto = {
   itin: 'Acepta ITIN',
   pasaporte: 'Acepta pasaporte',
   arreglos: 'Financiamiento para arreglos',
+  habitable: 'Casa habitable',
+  paraFlippers: 'Orientada a proyectos Fix & Flip',
+  asesoria: 'Ofrece acompañamiento durante el proceso',
   incluirArv: 'Incluir ARV confirmado',
 } as const;
 
