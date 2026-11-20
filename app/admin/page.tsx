@@ -6,7 +6,7 @@ import type { Session } from '@supabase/supabase-js';
 import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
 import { etiquetaDisponibilidad, type EstadoDisponibilidad } from '@/lib/disponibilidad';
 import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
-import type { TextosFicha } from '@/lib/textos-propiedad';
+import { requisitosTextos, type TextosFicha } from '@/lib/textos-propiedad';
 import { CompradoresVip } from './compradores-vip';
 import { CorregirPrecio } from './corregir-precio';
 import { AvisoWhatsApp, CopiarEnlaceFicha } from './aviso-whatsapp';
@@ -827,7 +827,11 @@ function Inventario({
 
                 <TextosDeFicha
                   ficha={prop}
-                  puedeGenerar={Boolean(prop.ciudad_zona && prop.precio && prop.estado === 'disponible')}
+                  requisitos={requisitosTextos(prop)}
+                  editarBorrador={prop.publicada_en ? undefined : () => {
+                    cargarFormulario(prop);
+                    setRevisando(null);
+                  }}
                   guardar={async (version, peticion) => {
                     const respuesta = await solicitar<{ textos: TextosFicha; origen?: string }>(
                       userId, '/api/admin/textos', {

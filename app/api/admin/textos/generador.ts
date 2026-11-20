@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import {
-  canalesTexto, condicionesTexto, MAX_TEXTO,
+  canalesTexto, condicionesTexto, MAX_TEXTO, requisitosTextos,
   type CanalTexto, type CondicionesTexto,
 } from '../../../../lib/textos-propiedad';
 
@@ -36,9 +36,7 @@ function numeroPublico(valor: unknown) {
 export function datosAnuncio(ficha: FichaAnuncio, condiciones: CondicionesTexto) {
   const zona = typeof ficha.ciudad_zona === 'string' ? ficha.ciudad_zona.trim() : '';
   const precio = numeroPublico(ficha.precio);
-  // Solo se admite una localidad o ZIP, sin números de calle ni texto libre.
-  if (!zona || zona.length > 100 || !/^(?:\d{5}(?:-\d{4})?|\p{L}[\p{L}\p{M} .,’-]*(?: \d{5}(?:-\d{4})?)?)$/u.test(zona)
-    || !precio || ficha.estado === 'vendida' || ficha.estado === 'en_contrato') return null;
+  if (!precio || requisitosTextos(ficha).length) return null;
   const lote = typeof ficha.lot_size === 'string' && /^\d[\d,.]*\s*(?:sq\.?\s*ft\.?|sqft|ft²|acres?)?$/i.test(ficha.lot_size)
     ? ficha.lot_size : undefined;
   return {

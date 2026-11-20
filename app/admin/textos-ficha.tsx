@@ -56,9 +56,10 @@ function EditorTexto({ canal, texto, aprobado, ocupado, enviar }: {
   );
 }
 
-export function TextosDeFicha({ ficha, puedeGenerar, guardar }: {
+export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
   ficha: TextosFicha;
-  puedeGenerar: boolean;
+  requisitos: string[];
+  editarBorrador?: () => void;
   guardar: (version: number, peticion: PeticionTexto) => Promise<{ origen?: string }>;
 }) {
   const [condiciones, setCondiciones] = useState(ficha.condiciones_texto ?? {});
@@ -115,12 +116,19 @@ export function TextosDeFicha({ ficha, puedeGenerar, guardar }: {
               className="w-20 rounded border border-zinc-800 bg-zinc-950 p-1" />
           </label>
         </div>
-        <button type="button" disabled={!puedeGenerar || Boolean(enganche && (Number(enganche) <= 0 || Number(enganche) > 100))}
+        <button type="button" disabled={requisitos.length > 0 || Boolean(enganche && (Number(enganche) <= 0 || Number(enganche) > 100))}
           onClick={generar} className="rounded bg-zinc-800 px-3 py-2 text-amber-300 disabled:opacity-50">
           {ocupado ? 'Procesando…' : 'Generar cuatro textos'}
         </button>
       </fieldset>
-      {!puedeGenerar && <p className="text-zinc-400">Guarda una zona y un precio válidos en una ficha disponible para generar.</p>}
+      {requisitos.length > 0 && (
+        <div className="space-y-2 text-zinc-300">
+          <ul className="list-inside list-disc">
+            {requisitos.map((requisito) => <li key={requisito}>{requisito}</li>)}
+          </ul>
+          {editarBorrador && <a href="#formulario-ficha" onClick={editarBorrador} className="text-amber-300">Completar borrador</a>}
+        </div>
+      )}
       {mensaje && <p role="status" className="text-zinc-300">{mensaje}</p>}
       {fallo && <p role="alert" className="text-red-300">{fallo}</p>}
       <div className="grid gap-3 md:grid-cols-2">

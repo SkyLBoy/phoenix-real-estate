@@ -1,4 +1,4 @@
-import { canalesTexto, MAX_TEXTO, type CanalTexto } from '../../../../lib/textos-propiedad';
+import { canalesTexto, MAX_TEXTO, requisitosTextos, type CanalTexto } from '../../../../lib/textos-propiedad';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
 import { camposAnuncio, datosAnuncio, generarTextos, validarCondiciones, type FichaAnuncio } from './generador';
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     if (!ficha) return error('La ficha o sus textos cambiaron. Recarga el inventario.', 409);
 
     const datos = datosAnuncio(ficha, condiciones);
-    if (!datos) return error('Para generar textos, usa una ficha disponible con precio y ciudad o ZIP válidos.', 400);
+    if (!datos) return error(requisitosTextos(ficha).join(' '), 400);
 
     const resultado = await generarTextos(datos);
     cambios = { ...resultado.textos, ...sinAprobar, condiciones_texto: condiciones };

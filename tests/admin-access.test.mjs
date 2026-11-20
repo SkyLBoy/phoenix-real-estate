@@ -730,3 +730,27 @@ test('el registro VIP es público y solo el operador autorizado puede consultar 
   assert.equal(chatComprador('602-555-0123'), 'https://wa.me/16025550123');
   assert.equal(chatComprador('dato inválido'), null);
 });
+
+test('la generación indica qué falta y funciona al completar zona y precio en un borrador sin portada', async () => {
+  const { POST: generar } = await import('../app/api/admin/textos/route.ts');
+  const id = 'borrador-textos-sin-portada';
+  properties.set(id, { id, textos_version: 0, ciudad_zona: null, precio: 200000, estado: 'disponible', publicada_en: null });
+  const solicitarTextos = () => generar(new Request('https://panel.test/api/admin/textos', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${seller}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, accion: 'generar', version: 0 }),
+  }));
+  const incompleto = await solicitarTextos();
+  assert.equal(incompleto.status, 400);
+  assert.equal((await incompleto.json()).error, 'Falta guardar la ciudad o el código postal de la propiedad.');
+
+  const guardado = await request(PATCH, 'PATCH', { token: seller, body: {
+    id, accion: 'guardar_borrador', ficha: { ciudad_zona: 'Phoenix 85035', precio: 200000 },
+  } });
+  assert.equal(guardado.status, 200);
+  const respuesta = await solicitarTextos();
+  assert.equal(respuesta.status, 200);
+  assert.equal((await respuesta.json()).textos.script_fb_es, scripts.script_fb_es);
+  assert.equal(properties.get(id).publicada_en, null);
+  assert.equal(properties.get(id).imagen_portada, null);
+});
