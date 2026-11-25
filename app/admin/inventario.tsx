@@ -2,6 +2,7 @@
 
 import { separarUbicacion, unirUbicacion } from '@/lib/ciudades-phoenix';
 
+import { LogoMarca } from '../logo-marca';
 import { SelectorCiudad } from '../selector-ciudad';
 import { FichaInventario } from './ficha-inventario';
 import { type MaterialRevisado } from './revision-material';
@@ -332,7 +333,7 @@ export function Inventario({
       <div className="mx-auto max-w-6xl space-y-5 md:space-y-7">
         <header className="admin-header flex flex-wrap items-center justify-between gap-5 p-5 md:p-7">
           <div>
-            <p className="admin-brand">Sergio Orantes | House FixAndFlip</p>
+            <div className="flex items-center gap-3"><LogoMarca /><p className="admin-brand">Sergio Orantes | House FixAndFlip</p></div>
             <h1 className="editorial-title mt-1 flex items-center gap-2 text-3xl md:text-4xl">
               <Building2 className="shrink-0 text-white" /> Panel de propiedades
             </h1>

@@ -1,8 +1,9 @@
+import { LogoMarca } from '@/app/logo-marca';
 import { GaleriaPublica } from '@/app/galeria-publica';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
-import { ArrowLeft, House, MessageCircle, TrendingUp } from 'lucide-react';
+import { ArrowLeft, MessageCircle, TrendingUp } from 'lucide-react';
 import { Suspense } from 'react';
 import { importeUsd, diferenciaArv } from '@/app/metricas-propiedad';
 import { CAMPOS_PUBLICOS, enlacePortada, enlaceWhatsApp, type PropiedadPublica } from '@/lib/propiedades-publicas';
@@ -51,7 +52,7 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
       <header className="brand-bar">
         <div className="public-wrap">
           <Link href="/" className="brand-lockup" aria-label="Sergio Orantes | House FixAndFlip">
-            <span className="brand-mark"><House size={20} aria-hidden="true" /></span>
+            <LogoMarca />
             <span translate="no"><strong>Sergio Orantes</strong><small>House FixAndFlip</small></span>
           </Link>
         </div>

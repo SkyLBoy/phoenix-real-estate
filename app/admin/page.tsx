@@ -1,5 +1,7 @@
 'use client';
 
+import { LogoMarca } from '../logo-marca';
+
 import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Lock } from 'lucide-react';
@@ -85,7 +87,7 @@ export default function AdminPanel() {
         <h1 className="flex items-center gap-2 text-amber-400 font-bold text-lg">
           <Lock size={20} /> Acceso privado
         </h1>
-        <p className="text-sm font-medium text-zinc-400">Sergio Orantes | House FixAndFlip</p>
+        <div className="flex items-center gap-3"><LogoMarca /><p className="text-sm font-medium text-zinc-400">Sergio Orantes | House FixAndFlip</p></div>
         <label className="block space-y-1">
           <span className="text-sm">Correo electrónico</span>
           <input

@@ -1,5 +1,6 @@
 'use client';
 
+import { LogoMarca } from './logo-marca';
 import { SelectorCiudad } from './selector-ciudad';
 
 import { VendeTuCasa } from './vende-tu-casa';
@@ -21,7 +22,6 @@ import {
   TrendingUp,
   MessageCircle,
   CheckCircle2,
-  House,
   KeyRound,
   Bell,
 } from 'lucide-react';
@@ -72,7 +72,7 @@ export default function CatalogoPublico() {
       <header className="brand-bar">
         <div className="public-wrap brand-header-layout">
           <Link href="/" className="brand-lockup" aria-label="Sergio Orantes | House FixAndFlip">
-            <span className="brand-mark"><House size={20} aria-hidden="true" /></span>
+            <LogoMarca />
             <span translate="no"><strong>Sergio Orantes</strong><small>House FixAndFlip</small></span>
           </Link>
           <nav aria-label="Acciones del catálogo" className="brand-actions">
