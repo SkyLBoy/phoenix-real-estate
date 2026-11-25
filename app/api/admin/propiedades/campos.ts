@@ -2,7 +2,7 @@ import type { FotoDrive } from '@/lib/fotos-drive';
 import { identificadorDrive, listarFotosDrive } from '../../drive';
 
 // La copia WebP solo se lee al servir una portada individual.
-export const camposInventario = 'id,created_at,ciudad_zona,direccion_privada,precio,arv,beds,baths,sqft,lot_size,year_built,drive_url,imagen_portada,fotos_drive,portada_drive_id,tiene_portada_drive,notas_extra,publicada_en,estado,ultima_confirmacion,condiciones_texto,textos_version,script_fb_es,script_fb_en,script_wa_vip,script_filtro_curiosos,script_fb_es_aprobado,script_fb_en_aprobado,script_wa_vip_aprobado,script_filtro_curiosos_aprobado';
+export const camposInventario = 'id,ficha_version,created_at,ciudad_zona,direccion_privada,precio,arv,beds,baths,sqft,lot_size,year_built,drive_url,imagen_portada,fotos_drive,portada_drive_id,tiene_portada_drive,notas_extra,publicada_en,estado,ultima_confirmacion,condiciones_texto,textos_version,script_fb_es,script_fb_en,script_wa_vip,script_filtro_curiosos,script_fb_es_aprobado,script_fb_en_aprobado,script_wa_vip_aprobado,script_filtro_curiosos_aprobado';
 
 function texto(value: unknown) {
   if (value == null || value === '') return null;
@@ -34,7 +34,7 @@ export function urlPublica(value: unknown) {
   return result;
 }
 
-export async function camposFicha(body: Record<string, unknown>) {
+export async function camposFicha(body: Record<string, unknown>, anterior?: { drive_url: string | null; fotos_drive: FotoDrive[] }) {
   const driveUrl = urlPublica(body.drive_url);
   const seleccion = body.fotos_drive_ids ?? [];
   const portada = body.portada_drive_id ?? null;
@@ -45,7 +45,9 @@ export async function camposFicha(body: Record<string, unknown>) {
   let fotos: FotoDrive[] = [];
   if (seleccion.length) {
     if (!driveUrl) throw new Error('Agrega el enlace de la carpeta para guardar las fotos');
-    const disponibles = await listarFotosDrive(driveUrl);
+    const guardadas = anterior?.fotos_drive ?? [];
+    const reutilizar = anterior?.drive_url === driveUrl && seleccion.every((id) => guardadas.some((foto) => foto.id === id));
+    const disponibles = reutilizar ? guardadas : await listarFotosDrive(driveUrl);
     const ids = new Set(seleccion);
     fotos = disponibles.filter((foto) => ids.has(foto.id));
     if (fotos.length !== ids.size) throw new Error('Algunas fotos ya no están disponibles en esa carpeta');

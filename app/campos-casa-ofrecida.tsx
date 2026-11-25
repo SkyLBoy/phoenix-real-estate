@@ -6,6 +6,7 @@ const campo = 'vip-input block';
 export function CamposCasaOfrecida({ ocupado, accion }: { ocupado: boolean; accion: string }) {
   return (
   <fieldset disabled={ocupado} className="grid gap-3 sm:grid-cols-2">
+    <div hidden aria-hidden="true"><label>Sitio web<input name="sitio_web" tabIndex={-1} autoComplete="off" /></label></div>
     <label className="space-y-1 text-sm">Nombre del propietario
       <input name="nombre" className={campo} maxLength={120} required autoComplete="off" />
     </label>
@@ -18,7 +19,7 @@ export function CamposCasaOfrecida({ ocupado, accion }: { ocupado: boolean; acci
         {Object.entries(paisesWhatsApp).map(([clave, pais]) => <option key={clave} value={clave}>{pais.etiqueta}</option>)}
       </select>
     </label>
-    <label className="space-y-1 text-sm">WhatsApp
+    <label className="space-y-1 text-sm">Número de WhatsApp
       <input name="whatsapp" type="tel" className={campo} maxLength={40} required autoComplete="off" />
     </label>
     <label className="space-y-1 text-sm">Condición aproximada

@@ -1,3 +1,4 @@
+import { registrarFallo } from './diagnostico';
 import { plazoConfirmacion } from './disponibilidad';
 import { supabase } from './supabase';
 import { esZonaPublica } from './zona-publica';
@@ -25,7 +26,7 @@ export async function cargarSimilares(referencia: Resumen, ahora = Date.now()): 
       .select('id,ciudad_zona,precio')
       .neq('id', referencia.id).eq('estado', 'disponible').gt('ultima_confirmacion', desde)
       .or(zonas).order('id').range(inicio, inicio + porPagina - 1);
-    if (error) return [];
+    if (error) { registrarFallo('catalogo.similares', error); return []; }
     for (const ficha of data) {
       const zona = ubicacion(ficha.ciudad_zona);
       const mismoZip = Boolean(zip && zona.zip === zip);

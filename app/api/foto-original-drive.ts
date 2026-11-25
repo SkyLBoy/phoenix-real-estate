@@ -1,3 +1,4 @@
+import { parse } from 'node-html-parser';
 import type { FotoDrive } from '@/lib/fotos-drive';
 import { abrirFotoDrive, ErrorDrive, identificadorDrive } from './drive';
 
@@ -45,6 +46,43 @@ async function leerImagen(respuesta: Response) {
   return { bytes, tipo };
 }
 
+// Sólo interpreta el formulario público de confirmación de Google, nunca páginas de inicio de sesión.
+async function confirmacionPublica(respuesta: Response, actual: URL, original: URL) {
+  const lector = respuesta.body?.getReader();
+  if (!lector) return null;
+  const partes: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await lector.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > 256 * 1024) { await lector.cancel(); return null; }
+      partes.push(value);
+    }
+  } finally { lector.releaseLock(); }
+  const documento = parse(Buffer.concat(partes).toString('utf8'));
+  if (/owner hasn't given you permission to download|only the owner and editors can download/i.test(documento.textContent)) {
+    throw new ErrorDrive('El propietario de Drive desactivó las descargas para lectores. Pídele que habilite la descarga de estos archivos para lectores con el enlace. Ver las fotos no garantiza permiso para descargarlas.', 403);
+  }
+  const formulario = documento.querySelector('form#download-form');
+  const accion = formulario?.getAttribute('action');
+  if (!formulario || !accion || !URL.canParse(accion, actual)
+    || (formulario.getAttribute('method') ?? 'get').toLowerCase() !== 'get') return null;
+  const destino = new URL(accion, actual);
+  if (destino.protocol !== 'https:' || destino.username || destino.password || destino.port
+    || !((destino.hostname === 'drive.usercontent.google.com' && destino.pathname === '/download')
+      || (destino.hostname === 'drive.google.com' && destino.pathname === '/uc'))) return null;
+  for (const input of formulario.querySelectorAll('input[type="hidden"]')) {
+    const nombre = input.getAttribute('name');
+    if (nombre && ['id', 'export', 'confirm', 'uuid', 'resourcekey'].includes(nombre)) destino.searchParams.set(nombre, input.getAttribute('value') ?? '');
+  }
+  if (destino.searchParams.get('id') !== original.searchParams.get('id') || !destino.searchParams.get('confirm')) return null;
+  const clave = original.searchParams.get('resourcekey');
+  if (clave) destino.searchParams.set('resourcekey', clave);
+  return destino;
+}
+
 // Google redirige las descargas hacia sus hosts de contenido. No se reenvían credenciales.
 async function imagenPublica(enlace: URL, signal: AbortSignal) {
   let destino = enlace;
@@ -54,6 +92,12 @@ async function imagenPublica(enlace: URL, signal: AbortSignal) {
     if (destino.protocol !== 'https:' || destino.username || destino.password || destino.port || !google) break;
     const respuesta = await fetch(destino, { redirect: 'manual', cache: 'no-store', signal })
       .catch(() => { throw new ErrorDrive('Drive no respondió. Vuelve a intentar la descarga.', 502); });
+    if (respuesta.ok && respuesta.headers.get('content-type')?.includes('text/html')) {
+      const confirmacion = await confirmacionPublica(respuesta, destino, enlace);
+      if (!confirmacion) break;
+      destino = confirmacion;
+      continue;
+    }
     if (respuesta.status < 300 || respuesta.status >= 400) return leerImagen(respuesta);
     const location = respuesta.headers.get('location');
     await respuesta.body?.cancel();

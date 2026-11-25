@@ -1,8 +1,9 @@
-import { supabaseAdmin } from '../admin-access';
+import { leerEnvioPublico, registrarEnvioPublico } from '../captacion-publica';
 import { validarCasaOfrecida } from '../validar-casa-ofrecida';
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
+  const body = await leerEnvioPublico(request).catch(() => null);
+  if (body?.sitio_web) return Response.json({ ok: true }, { status: 201 });
   let ficha;
   try {
     ficha = validarCasaOfrecida(body);
@@ -10,10 +11,5 @@ export async function POST(request: Request) {
     return Response.json({ error: error instanceof Error ? error.message : 'Revisa los datos de la casa.' }, { status: 400 });
   }
 
-  const { error } = await supabaseAdmin.from('casas_ofrecidas').insert(ficha);
-  if (error) {
-    return Response.json({ error: 'No se pudo enviar tu propiedad. Intenta de nuevo.' }, { status: 500 });
-  }
-
-  return Response.json({ ok: true }, { status: 201 });
+  return registrarEnvioPublico('casa', ficha);
 }

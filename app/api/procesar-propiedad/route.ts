@@ -1,3 +1,4 @@
+import { respuestaFallo } from '../../../lib/diagnostico';
 import { NextResponse } from 'next/server';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../admin-access';
 import { ErrorDrive } from '../drive';
@@ -34,12 +35,11 @@ export async function POST(req: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return respuestaFallo('propiedad.crear', error);
     }
 
     return NextResponse.json({ ok: true, propiedad: data });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Error interno';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return respuestaFallo('propiedad.crear_inesperado', err);
   }
 }

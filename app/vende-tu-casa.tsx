@@ -37,15 +37,15 @@ export function VendeTuCasa() {
         <div className="space-y-3">
           <h2 id="titulo-venta" className="editorial-title text-4xl">Vende tu casa</h2>
           <p className="max-w-[36ch] leading-relaxed text-[var(--muted)]">
-            ¿Quieres vender tu casa en Arizona? Cuéntale a Sergio sobre la propiedad. Si le interesa comprarla, te contactará por WhatsApp.
+            ¿Quieres vender tu casa en Arizona? Cuéntame sobre la propiedad. Te contactaré por WhatsApp.
           </p>
           <p className="max-w-[36ch] text-sm leading-relaxed text-[var(--muted)]">
-            Tu solicitud es privada. Deja la dirección exacta para cuando hables con Sergio.
+            Tu solicitud es privada.
           </p>
         </div>
         {enviada ? (
           <p role="status" className="self-start rounded-lg bg-emerald-50 p-4 text-emerald-900">
-            Sergio recibió tu propiedad para revisión. Si necesita más información, te escribirá al WhatsApp que compartiste.
+            He recibió tu propiedad para revisión. Si necesito más información, te escribire al WhatsApp que compartiste.
           </p>
         ) : (
           <form onSubmit={enviar} className="space-y-3">

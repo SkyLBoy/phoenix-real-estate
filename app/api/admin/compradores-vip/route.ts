@@ -1,3 +1,4 @@
+import { respuestaFallo } from '../../../../lib/diagnostico';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
 
 export async function GET(request: Request) {
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
     .order('id', { ascending: false })
     .range(inicio, inicio + limite);
 
-  if (error) return Response.json({ error: 'No se pudieron cargar los compradores.' }, { status: 500 });
+  if (error) return respuestaFallo('vip.consultar', error);
 
   return Response.json({ compradores: data.slice(0, limite), hayMas: data.length > limite }, {
     headers: { 'Cache-Control': 'private, no-store' },

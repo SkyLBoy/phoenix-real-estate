@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { chatComprador } from '@/lib/compradores-vip';
 import { condicionesCasa, estadosOferta, type CasaOfrecida } from '@/lib/casas-ofrecidas';
-import { CamposCasaOfrecida, datosCasaOfrecida } from '../campos-casa-ofrecida';
 import { importeUsd } from '../metricas-propiedad';
 
 type Solicitar = <T>(opciones?: RequestInit, pagina?: number) => Promise<T>;
@@ -37,22 +36,6 @@ export function CasasOfrecidas({ solicitar }: { solicitar: Solicitar }) {
     }
   };
 
-  const registrar = (evento: FormEvent<HTMLFormElement>) => {
-    evento.preventDefault();
-    const formulario = evento.currentTarget;
-    const datos = datosCasaOfrecida(formulario);
-    void ejecutar(async () => {
-      await solicitar({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(datos),
-      });
-      formulario.reset();
-      setAviso('Casa ofrecida registrada.');
-      await cargar(0);
-    });
-  };
-
   const cambiarEstado = (id: string, estado: string) => ejecutar(async () => {
     const { casa } = await solicitar<{ casa: CasaOfrecida }>({
       method: 'PATCH',
@@ -68,16 +51,9 @@ export function CasasOfrecidas({ solicitar }: { solicitar: Solicitar }) {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="titulo-casas-ofrecidas" className="editorial-title text-2xl">Casas ofrecidas</h2>
         <button type="button" className="public-action" disabled={ocupado} onClick={() => ejecutar(() => cargar(0))}>
-          {casas ? 'Actualizar bandeja' : 'Ver casas ofrecidas'}
+          Ver casas ofrecidas
         </button>
       </header>
-      <details className="rounded-xl border border-[var(--line)] bg-white px-3">
-        <summary className="cursor-pointer font-semibold">Registrar una casa ofrecida</summary>
-        <form onSubmit={registrar} className="pb-4">
-          <CamposCasaOfrecida ocupado={ocupado} accion="Guardar casa ofrecida" />
-        </form>
-      </details>
-
       {ocupado && <p role="status" className="text-sm">Procesando…</p>}
       {aviso && <p role="status" className="text-sm">{aviso}</p>}
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}

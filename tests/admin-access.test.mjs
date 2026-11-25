@@ -40,6 +40,7 @@ const outsider = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 process.env.ADMIN_USER_IDS = `${seller}, ${technician}`;
 
 const properties = new Map();
+const materiales = new Map();
 const ofertas = new Map();
 const compradores = [];
 const serviceCalls = [];
@@ -63,6 +64,38 @@ globalThis.fetch = async (input, init) => {
   const request = new Request(input, init);
   const url = new URL(request.url);
   serviceCalls.push(url.pathname);
+
+  if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/rpc/reservar_material') {
+    const { propiedad, version, origen } = await request.json();
+    const ficha = properties.get(propiedad);
+    if (!ficha || (ficha.ficha_version ?? 0) !== version) return Response.json([]);
+    const anterior = [...materiales.values()].find((m) => m.propiedad_id === propiedad && m.ficha_version === version && m.fuente === origen);
+    if (anterior && !anterior.contenido_hash && (!anterior.vence || Date.parse(anterior.vence) > Date.now())) return Response.json([]);
+    const id = crypto.randomUUID();
+    const token = crypto.randomUUID();
+    materiales.set(id, { id,token,propiedad_id:propiedad,ficha_version:version,fuente:origen,vence:new Date(Date.now()+90000).toISOString() });
+    return Response.json([{ id, token }]);
+  }
+  if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/material_publico') {
+    const filtros = [...url.searchParams].filter(([campo]) => campo !== 'select');
+    const rows = [...materiales.values()].filter((fila) => filtros.every(([campo, valor]) => valor === 'is.null' ? fila[campo] == null : String(fila[campo]) === valor.slice(3)));
+    if (request.method === 'PATCH') {
+      const cambios = await request.json();
+      for (const fila of rows) Object.assign(fila, cambios);
+    }
+    return Response.json(rows);
+  }
+
+  if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/rpc/registrar_envio_publico') {
+    assert.equal(request.headers.get('authorization'), 'Bearer service-role-key');
+    const { canal, datos } = await request.json();
+    if (canal === 'vip') compradores.unshift({ id: compradores.length + 1, ...datos });
+    else {
+      const id = 'edee7d66-8832-40a5-9418-f47ab7190133';
+      ofertas.set(id, { ...datos, id, estado: 'nueva' });
+    }
+    return Response.json('registrado');
+  }
 
   if (url.hostname === 'generativelanguage.googleapis.com') {
     entradasGemini.push(await request.text());
@@ -186,6 +219,24 @@ globalThis.fetch = async (input, init) => {
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades_publicas') {
     assert.equal(request.headers.get('authorization'), 'Bearer anon-key');
     assert.equal(url.searchParams.get('estado'), 'eq.disponible');
+    if (url.searchParams.get('select')?.startsWith('id,ciudad_zona,precio,arv')) {
+      let filas = [...properties.values()].filter((p) => p.publicada_en && p.estado === 'disponible');
+      const ciudad = url.searchParams.get('ciudad')?.slice(3);
+      const zip = url.searchParams.get('zip')?.slice(5,-1);
+      if (ciudad) filas = filas.filter((p) => p.ciudad === ciudad);
+      if (zip) filas = filas.filter((p) => p.zip?.startsWith(zip));
+      filas.sort((a,b) => b.created_at.localeCompare(a.created_at) || a.id.localeCompare(b.id));
+      const total = filas.length;
+      const inicio = Number(url.searchParams.get('offset'));
+      const limite = Number(url.searchParams.get('limit'));
+      filas = filas.slice(inicio,inicio+limite);
+      const campos = url.searchParams.get('select').split(',');
+      return Response.json(filas.map((fila) => Object.fromEntries(campos.map((campo) => [campo,
+        ['drive_url','imagen_portada'].includes(campo) ? null : fila[campo] ?? null]))), {
+        headers: { 'Content-Range': `${inicio}-${inicio+filas.length-1}/${total}` },
+      });
+    }
+
     if (url.searchParams.get('select') === 'id,ciudad_zona,precio') {
       assert.equal(url.searchParams.get('or'), '(ciudad_zona.ilike."*peoria*",ciudad_zona.ilike."*85345*")');
       const excluida = url.searchParams.get('id').slice(4);
@@ -210,11 +261,18 @@ globalThis.fetch = async (input, init) => {
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades') {
     switch (request.method) {
       case 'GET': {
-        if (url.searchParams.get('select') === 'fotos_drive,portada_drive_id,portada_webp') {
+        if (url.searchParams.get('select') === 'portada_publica_id,galeria_publica_ids,portada_legacy_hash' || url.searchParams.get('select') === 'galeria_publica_ids') {
           assert.equal(url.searchParams.get('publicada_en'), 'not.is.null');
           assert.equal(url.searchParams.get('estado'), 'eq.disponible');
           const ficha = properties.get(url.searchParams.get('id').slice(3));
           return Response.json(ficha?.publicada_en && ficha.estado === 'disponible' ? [ficha] : []);
+        }
+        if (url.searchParams.get('select') === 'id,ciudad_zona,precio,arv,beds,baths,sqft,lot_size,year_built,drive_url,imagen_portada,estado,tiene_portada_drive,ultima_confirmacion') return Response.json([]);
+        if (url.searchParams.has('id') && !url.searchParams.has('textos_version')) {
+          const ficha = properties.get(url.searchParams.get('id').slice(3));
+          if (!ficha || (url.searchParams.has('ficha_version') && String(ficha.ficha_version ?? 0) !== url.searchParams.get('ficha_version').slice(3))) return Response.json([]);
+          if (url.searchParams.get('publicada_en') === 'is.null' && ficha.publicada_en != null) return Response.json([]);
+          return Response.json([ficha]);
         }
         if (url.searchParams.has('textos_version')) {
           const ficha = properties.get(url.searchParams.get('id').slice(3));
@@ -247,7 +305,7 @@ globalThis.fetch = async (input, init) => {
       }
       case 'POST': {
         const [body] = await request.json();
-        const created = { ultima_confirmacion: null, ...body, id: 'casa-2', estado: 'disponible' };
+        const created = { ficha_version: 0, ultima_confirmacion: null, ...body, id: 'casa-2', estado: 'disponible' };
         properties.set(created.id, created);
         return Response.json(created);
       }
@@ -259,13 +317,13 @@ globalThis.fetch = async (input, init) => {
         if (!existing || (publicacion === 'is.null' && existing.publicada_en !== null)
           || (publicacion === 'not.is.null' && existing.publicada_en == null)
           || filtros.some(([campo, filtro]) => filtro === 'is.null' ? existing[campo] != null
-            : String(existing[campo]) !== filtro.slice(3))) return Response.json([]);
+            : String(campo === 'ficha_version' ? existing[campo] ?? 0 : existing[campo]) !== filtro.slice(3))) return Response.json([]);
 
         const changes = await request.json();
         if (changes.publicada_en && (!existing.ciudad_zona || !(existing.precio > 0))) {
           return Response.json({ code: '23514' }, { status: 400 });
         }
-        properties.set(id, { ...existing, ...changes });
+        properties.set(id, { ...existing, ...changes, ficha_version: (existing.ficha_version ?? 0) + 1 });
         if (url.searchParams.has('select')) {
           return Response.json([Object.fromEntries(url.searchParams.get('select').split(',')
             .map((campo) => [campo, properties.get(id)[campo]]))]);
@@ -284,6 +342,7 @@ globalThis.fetch = async (input, init) => {
 const { GET, PATCH, DELETE } = await import('../app/api/admin/propiedades/route.ts');
 const { POST } = await import('../app/api/procesar-propiedad/route.ts');
 const { GET: DRIVE } = await import('../app/api/admin/drive/route.ts');
+const { POST: PREPARAR } = await import('../app/api/admin/material-publico/route.ts');
 const { GET: PORTADA } = await import('../app/api/propiedades/[id]/portada/route.ts');
 
 test('el contacto público conserva la referencia y nunca abre el WhatsApp de ejemplo', async () => {
@@ -333,7 +392,23 @@ test('un enlace histórico sugiere hasta dos casas confirmadas por ZIP, ciudad y
   }
 });
 
-function request(handler, method, { token, query = '', body } = {}) {
+async function request(handler, method, { token, query = '', body } = {}) {
+  if (body && ['guardar_borrador', 'publicar'].includes(body.accion) && !Object.hasOwn(body, 'ficha_version')) {
+    body = { ...body, ficha_version: properties.get(body.id)?.ficha_version ?? 0 };
+  }
+  if (body?.accion === 'publicar' && body.material_revisado === undefined && token === seller) {
+    const ficha = properties.get(body.id);
+    if (ficha && (ficha.portada_drive_id || ficha.imagen_portada)) {
+      const fuente = ficha.portada_drive_id ?? 'portada-alternativa';
+      const params = new URLSearchParams({ id:String(body.id), version:String(body.ficha_version), fuente });
+      const respuesta = await PREPARAR(new Request(`https://panel.test/api/admin/material-publico?${params}`, {
+        method:'POST',headers:{Authorization:`Bearer ${seller}`}, ...(fuente === 'portada-alternativa' ? { body:fotoJpeg } : {}),
+      }));
+      if (!respuesta.ok) return respuesta;
+      const copia = await respuesta.json();
+      body = { ...body, material_revisado:true, portada_publica_id:copia.id, galeria_publica_ids:[copia.id] };
+    }
+  }
   const path = method === 'POST' ? '/api/procesar-propiedad' : '/api/admin/propiedades';
   const headers = new Headers({ 'Content-Type': 'application/json' });
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -469,10 +544,10 @@ test('publicar conserva la última verificación o registra la confirmación exp
   const portada = 'https://images.test/prueba.jpg';
   for (const confirmar of [false, true]) {
     const id = `borrador-confirmacion-${confirmar}`;
-    properties.set(id, { id, estado: 'disponible', ciudad_zona: '85345', precio: 292000,
+    properties.set(id, { id, estado: 'disponible', ciudad_zona: 'Peoria, AZ 85345', precio: 292000,
       imagen_portada: portada, publicada_en: null, ultima_confirmacion: fecha });
     const publicar = (valor) => request(PATCH, 'PATCH', { token: seller, body: {
-      id, accion: 'publicar', portada_revisada: portada, zona_revisada: '85345', confirmar_disponibilidad: valor,
+      id, accion: 'publicar', portada_revisada: portada, zona_revisada: 'Peoria, AZ 85345', confirmar_disponibilidad: valor,
     } });
     assert.equal((await publicar('sí')).status, 400);
     assert.equal((await publicar(confirmar)).status, 200);
@@ -605,7 +680,7 @@ test('Drive lista fotos compatibles, guarda la selección y sirve la portada sol
   const metadata = await sharp(Buffer.from(await portada.arrayBuffer())).metadata();
   assert.equal(metadata.width, 1600);
   assert.equal(metadata.height, 800);
-  assert.deepEqual(serviceCalls.slice(consultasTrasPublicar), ['/rest/v1/propiedades']);
+  assert.ok(serviceCalls.slice(consultasTrasPublicar).every((ruta) => !ruta.includes('/drive/')));
 });
 
 
@@ -681,7 +756,7 @@ test('sin clave, Drive público entrega originales seleccionados en un ZIP y con
     const fallo = await request(PATCH, 'PATCH', { token: seller, body: {
       id: propiedad.id, accion: 'publicar', portada_drive_revisada: 'foto-2', carpeta_revisada: embebido,
     } });
-    assert.equal(fallo.status, 422);
+    assert.equal(fallo.status, 503);
     assert.equal(properties.get(propiedad.id).publicada_en, null);
     driveSinAcceso = false;
     const publicado = await request(PATCH, 'PATCH', { token: seller, body: {
@@ -693,12 +768,13 @@ test('sin clave, Drive público entrega originales seleccionados en un ZIP y con
     const respuesta = await portada();
     assert.equal(respuesta.status, 200);
     assert.equal(respuesta.headers.get('Content-Type'), 'image/webp');
-    assert.deepEqual(serviceCalls.slice(antesPortada), ['/rest/v1/propiedades']);
+    assert.ok(serviceCalls.slice(antesPortada).every((ruta) => !ruta.includes('/drive/')));
     driveSinAcceso = false;
     const antigua = properties.get(propiedad.id);
-    properties.set(propiedad.id, { ...antigua, portada_webp: null });
-    assert.equal((await portada()).status, 200);
-    assert.ok(properties.get(propiedad.id).portada_webp);
+    properties.set(propiedad.id, { ...antigua, portada_publica_id: null, portada_webp: null });
+    const antesAntigua = serviceCalls.length;
+    assert.equal((await portada()).status, 404);
+    assert.deepEqual(serviceCalls.slice(antesAntigua), ['/rest/v1/propiedades']);
     for (const estado of ['en_contrato', 'vendida']) {
       properties.set(propiedad.id, { ...antigua, estado });
       assert.equal((await portada()).status, 404);
@@ -874,7 +950,7 @@ test('confirmar y reactivar actualizan la fecha sin cambiar el identificador de 
   assert.equal((await contrato.json()).disponibilidad.estado, 'en_contrato');
   const retirada = await cambiar('vendida');
   assert.deepEqual((await retirada.json()).disponibilidad, {
-    id, estado: 'vendida', ultima_confirmacion: confirmada.ultima_confirmacion,
+    id, estado: 'vendida', ficha_version: 3, ultima_confirmacion: confirmada.ultima_confirmacion,
   });
 
   const reactivacion = await cambiar('disponible');
@@ -1184,4 +1260,225 @@ test('las plantillas usan el mismo público en ambos idiomas y solo los rasgos c
   } finally {
     process.env.GEMINI_API_KEY = apiKey;
   }
+});
+
+test('los filtros reconocen ciudad y ZIP existentes sin confundir localidades', async () => {
+  const { separarUbicacion, unirUbicacion } = await import('../lib/ciudades-phoenix.ts');
+  assert.deepEqual(separarUbicacion('Peoria, AZ 85345'), { ciudad: 'Peoria', zip: '85345' });
+  assert.deepEqual(separarUbicacion('tempe Arizona 85281-1234'), { ciudad: 'Tempe', zip: '85281' });
+  assert.deepEqual(separarUbicacion('Mesa'), { ciudad: 'Mesa', zip: '' });
+  assert.deepEqual(separarUbicacion('East Mesa 85201'), { ciudad: '', zip: '85201' });
+  assert.deepEqual(separarUbicacion(null), { ciudad: '', zip: '' });
+  assert.equal(unirUbicacion('Chandler', '85225'), 'Chandler, AZ 85225');
+  assert.equal(unirUbicacion('Phoenix', ''), 'Phoenix, AZ');
+});
+
+test('una versión antigua no sobrescribe un borrador y la versión es obligatoria', async () => {
+  const id = 'version-borrador';
+  properties.set(id, { id, publicada_en: null, ficha_version: 2, ciudad_zona: 'Peoria', notas_extra: 'Cambio reciente' });
+  const guardar = (ficha_version) => PATCH(new Request('https://panel.test/api/admin/propiedades', {
+    method:'PATCH',headers:{ Authorization: `Bearer ${seller}`, 'Content-Type':'application/json' },
+    body:JSON.stringify({ id, accion:'guardar_borrador', ficha_version, ficha:{ciudad_zona:'Peoria',notas_extra:'Cambio viejo'} }),
+  }));
+  assert.equal((await guardar(undefined)).status,400);
+  assert.equal((await guardar(-1)).status,400);
+  assert.equal((await guardar(1)).status,409);
+  assert.equal(properties.get(id).notas_extra,'Cambio reciente');
+  assert.equal((await guardar(2)).status,200);
+  assert.equal(properties.get(id).notas_extra,'Cambio viejo');
+  assert.equal((await guardar(2)).status,409);
+  properties.delete(id);
+});
+
+test('la captación rechaza cuerpos excesivos y descarta el campo trampa sin escribir', async () => {
+  const { POST: registrar } = await import('../app/api/compradores-vip/route.ts');
+  const inicio = serviceCalls.length;
+  const enviar = (body) => registrar(new Request('https://panel.test/api/compradores-vip', {
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),
+  }));
+  assert.equal((await enviar({ sitio_web:'https://bot.test' })).status,201);
+  assert.equal((await enviar({ nombre:'x'.repeat(20000) })).status,400);
+  assert.deepEqual(serviceCalls.slice(inicio),[]);
+});
+
+test('guardar datos con fotos previamente verificadas funciona durante una caída de Drive', async () => {
+  const id = 'correccion-sin-drive';
+  properties.set(id,{ id,publicada_en:null,ficha_version:0,drive_url:carpetaDrive,fotos_drive:[fotoDrive] });
+  const inicio = serviceCalls.length;
+  driveSinAcceso = true;
+  try {
+    const respuesta = await request(PATCH,'PATCH',{token:seller,body:{id,accion:'guardar_borrador',ficha:{
+      ciudad_zona:'Peoria',precio:292000,drive_url:carpetaDrive,fotos_drive_ids:[fotoDrive.id],portada_drive_id:fotoDrive.id,notas_extra:'Corregida',
+    }}});
+    assert.equal(respuesta.status,200);
+    assert.equal(properties.get(id).notas_extra,'Corregida');
+    assert.deepEqual(properties.get(id).fotos_drive,[fotoDrive]);
+    assert.ok(serviceCalls.slice(inicio).every((ruta) => !ruta.includes('/drive/') && ruta !== '/embeddedfolderview'));
+  } finally { driveSinAcceso=false; properties.delete(id); }
+});
+
+test('la galería usa copias revisadas, revalida ETag y deja de servirlas al retirar la ficha', async () => {
+  const { GET: galeria } = await import('../app/api/propiedades/[id]/fotos/route.ts');
+  const { GET: foto } = await import('../app/api/propiedades/[id]/fotos/[foto]/route.ts');
+  const id = 'copia-publica';
+  properties.set(id,{id,ficha_version:0,publicada_en:null,estado:'disponible',ciudad_zona:'Peoria',precio:250000,
+    drive_url:carpetaDrive,fotos_drive:[fotoDrive],portada_drive_id:fotoDrive.id});
+  const preparar = () => PREPARAR(new Request(`https://panel.test/api/admin/material-publico?id=${id}&version=0&fuente=${fotoDrive.id}`,{
+    method:'POST',headers:{Authorization:`Bearer ${seller}`},
+  }));
+  assert.equal((await PREPARAR(new Request(`https://panel.test/api/admin/material-publico?id=${id}`,{method:'POST'}))).status,401);
+  const reservas = await Promise.all([preparar(),preparar()]);
+  assert.deepEqual(reservas.map((r) => r.status).sort(),[200,409]);
+  const copia = await reservas.find((r) => r.ok).json();
+  const context = {params:Promise.resolve({id})};
+  assert.equal((await galeria(new Request('https://panel.test'),context)).status,404);
+  const publicada = await request(PATCH,'PATCH',{token:seller,body:{id,accion:'publicar',material_revisado:true,
+    portada_publica_id:copia.id,galeria_publica_ids:[copia.id],portada_drive_revisada:fotoDrive.id,carpeta_revisada:carpetaDrive}});
+  assert.equal(publicada.status,200);
+  driveSinAcceso=true;
+  try {
+    const listado = await (await galeria(new Request('https://panel.test'),context)).json();
+    assert.equal(listado.fotos.length,1);
+    assert.doesNotMatch(JSON.stringify(listado),/google|Sala|clave-foto|foto-1/);
+    const fotoContext = {params:Promise.resolve({id,foto:copia.id})};
+    const respuesta = await foto(new Request('https://panel.test'),fotoContext);
+    assert.equal(respuesta.status,200);
+    const tag = respuesta.headers.get('etag');
+    const antes = serviceCalls.length;
+    assert.equal((await foto(new Request('https://panel.test',{headers:{'If-None-Match':tag}}),fotoContext)).status,304);
+    assert.equal(serviceCalls.slice(antes).filter((p) => p==='/rest/v1/material_publico').length,1);
+    properties.get(id).estado='vendida';
+    assert.equal((await foto(new Request('https://panel.test',{headers:{'If-None-Match':tag}}),fotoContext)).status,404);
+    assert.equal((await galeria(new Request('https://panel.test'),context)).status,404);
+  } finally { driveSinAcceso=false; properties.delete(id); }
+});
+
+test('el catálogo pagina y filtra en la consulta con conteo total consistente', async () => {
+  const { GET: catalogo } = await import('../app/api/catalogo/route.ts');
+  const anteriores = [...properties];
+  properties.clear();
+  try {
+    for (let i=0;i<25;i++) properties.set(`p-${String(i).padStart(2,'0')}`,{
+      id:`p-${String(i).padStart(2,'0')}`,created_at:'2026-11-25',publicada_en:'2026-11-25',estado:'disponible',
+      ciudad_zona:'Peoria, AZ 85345',ciudad:'Peoria',zip:'85345',precio:292000,
+    });
+    properties.set('otra',{id:'otra',created_at:'2026-11-25',publicada_en:'2026-11-25',estado:'disponible',ciudad:'Mesa',zip:'85201'});
+    const primera = await (await catalogo(new Request('https://panel.test/api/catalogo?ciudad=Peoria&zip=853&pagina=0'))).json();
+    assert.equal(primera.total,25); assert.equal(primera.propiedades.length,12);
+    const ultima = await (await catalogo(new Request('https://panel.test/api/catalogo?ciudad=Peoria&zip=853&pagina=2'))).json();
+    assert.equal(ultima.total,25); assert.equal(ultima.propiedades.length,1); assert.equal(ultima.propiedades[0].id,'p-24');
+    assert.equal((await catalogo(new Request('https://panel.test/api/catalogo?ciudad=Inventada'))).status,400);
+    assert.equal((await catalogo(new Request('https://panel.test/api/catalogo?pagina=-1'))).status,400);
+  } finally { properties.clear(); for (const [id,valor] of anteriores) properties.set(id,valor); }
+});
+
+test('el diagnóstico devuelve una referencia y excluye mensajes y datos privados', async () => {
+  const { respuestaFallo } = await import('../lib/diagnostico.ts');
+  const original = console.error;
+  const registros = [];
+  console.error = (dato) => registros.push(dato);
+  try {
+    const respuesta = respuestaFallo('prueba.consultar',{code:'23514',message:'teléfono privado +526621234567',details:'clave-secreta',hint:'domicilio privado'});
+    const datos = await respuesta.json();
+    assert.equal(respuesta.status,503);
+    assert.equal(JSON.parse(registros[0]).incidente,datos.incidente);
+    assert.equal(respuesta.headers.get('x-incidente'),datos.incidente);
+    assert.doesNotMatch(JSON.stringify({registros,datos}),/52662|clave-secreta|domicilio|teléfono/);
+  } finally { console.error=original; }
+});
+
+test('los mensajes del proveedor separan domicilio, ubicación pública, Drive y notas sin inventar condiciones', async () => {
+  const { leerDatosPegados } = await import('../app/admin/datos-pegados.ts');
+  const casos = [
+    { mensaje: `7824 W Pierson St, Phoenix, AZ 85033
+PICTURES
+https://drive.google.com/drive/u/0/folders/1p9dWe20kFG32p9DCsdOWNjNW_omC3AVD
+Price: $295,000
+ARV: $395,000+
+Beds: 4
+Baths: 2
+Sq Ft: 1,681
+Lot Size: 6,948 Sq Ft
+Year Built: 1973
+Gorgeous Home
+Great Neighborhood
+Occupancy: Vacant at Close
+Access: Lockbox`, ciudad: 'Phoenix, AZ 85033', precio: '295000', nota: 'Access: Lockbox' },
+    { mensaje: `7923 W Sahuaro Dr, Peoria, AZ 85345
+Price: $292,000
+ARV: $399,900+
+Beds: 3
+Baths: 2
+Sq Ft: 1,080
+Year Built: 1983
+HOA: None
+Solar: None
+Pool: Yes
+Occupancy: Vacant`, ciudad: 'Peoria, AZ 85345', precio: '292000', nota: 'Pool: Yes' },
+    { mensaje: `1911 N 70th Dr, Phoenix, AZ 85035
+Price: $265,000
+ARV: $370,000
+Beds: 3
+Baths: 1
+Sq Ft: 1,089
+Lot Size: 8,277 Sq Ft
+Year Built: 1976
+Full Rehab Needed: Flooring, Paint, Windows, Bathrooms, and Popcorn Ceiling Removal
+Roof: 10 Years Old (Per Seller)
+HVAC: 9 Years Old (Per Seller)
+Recommended Garage Conversion into Livable Sq Ft
+Electrical Panel Appears to Be in Good Condition
+Down Payment: $10,000`, ciudad: 'Phoenix, AZ 85035', precio: '265000', nota: 'Down Payment: $10,000' },
+  ];
+  for (const caso of casos) {
+    const resultado = leerDatosPegados(caso.mensaje);
+    assert.equal(resultado.valores.direccionPrivada, caso.mensaje.split('\n')[0]);
+    assert.equal(resultado.valores.ciudadZona, caso.ciudad);
+    assert.equal(resultado.valores.precio, caso.precio);
+    assert.ok(resultado.notasExtra.includes(caso.nota));
+    assert.doesNotMatch(resultado.notasExtra, /W Pierson|W Sahuaro|N 70th/);
+    assert.equal(resultado.revisar.length, 0);
+  }
+  assert.ok(leerDatosPegados(casos[0].mensaje).driveUrl.includes('/folders/'));
+  assert.equal(leerDatosPegados(casos[1].mensaje).driveUrl, '');
+  assert.match(leerDatosPegados(casos[2].mensaje).advertencias.join(' '), /enganche.*revisión/);
+  const ambiguo = leerDatosPegados(`${casos[0].mensaje}\n${casos[1].mensaje}`);
+  assert.ok(ambiguo.revisar.includes('direccionPrivada'));
+  assert.ok(ambiguo.revisar.includes('ciudadZona'));
+});
+
+test('el ZIP recupera originales tras la confirmación pública de descarga de Drive', async () => {
+  const anterior = globalThis.fetch;
+  const clave = process.env.GOOGLE_DRIVE_API_KEY;
+  delete process.env.GOOGLE_DRIVE_API_KEY;
+  let bloqueado = false;
+  let accion = 'https://drive.usercontent.google.com/download';
+  let identificador = 'foto-1';
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname === 'drive.google.com' && url.pathname === '/uc' && bloqueado) return new Response("Only the owner and editors can download this file.", { headers: { 'content-type': 'text/html' } });
+    if (url.hostname === 'drive.google.com' && url.pathname === '/uc') return new Response(`<form id="download-form" action="${accion}" method="get"><input type="hidden" name="id" value="${identificador}"><input type="hidden" name="export" value="download"><input type="hidden" name="confirm" value="codigo-publico"><input type="hidden" name="uuid" value="token-publico"></form>`, { headers: { 'content-type': 'text/html' } });
+    if (url.hostname === 'drive.usercontent.google.com') {
+      if (url.searchParams.get('uuid') !== 'token-publico') return new Response(null, { status: 403 });
+      assert.equal(url.searchParams.get('confirm'), 'codigo-publico');
+      assert.equal(url.searchParams.get('resourcekey'), 'clave-foto');
+      return new Response(fotoJpeg, { headers: { 'content-type': 'image/jpeg' } });
+    }
+    return anterior(input, init);
+  };
+  try {
+    const respuesta = await DRIVE(new Request('https://panel.test/api/admin/drive?foto=foto-1&original=1&clave=clave-foto', { headers: { Authorization: `Bearer ${seller}` } }));
+    assert.equal(respuesta.status, 200);
+    assert.deepEqual(Buffer.from(await respuesta.arrayBuffer()), fotoJpeg);
+    for (const caso of [{ accion: 'https://ajeno.test/download', identificador: 'foto-1' },
+      { accion: 'https://drive.usercontent.google.com/download', identificador: 'otra-foto' }]) {
+      accion = caso.accion; identificador = caso.identificador;
+      const rechazo = await DRIVE(new Request('https://panel.test/api/admin/drive?foto=foto-1&original=1&clave=clave-foto', { headers: { Authorization: `Bearer ${seller}` } }));
+      assert.equal(rechazo.status, 422);
+    }
+    bloqueado = true;
+    const restringida = await DRIVE(new Request('https://panel.test/api/admin/drive?foto=foto-1&original=1&clave=clave-foto', { headers: { Authorization: `Bearer ${seller}` } }));
+    assert.equal(restringida.status, 403);
+    assert.match((await restringida.json()).error, /desactivó las descargas/);
+  } finally { globalThis.fetch = anterior; if (clave === undefined) delete process.env.GOOGLE_DRIVE_API_KEY; else process.env.GOOGLE_DRIVE_API_KEY = clave; }
 });

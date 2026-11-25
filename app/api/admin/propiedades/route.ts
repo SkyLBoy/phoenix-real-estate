@@ -1,9 +1,10 @@
+import { respuestaFallo } from '../../../../lib/diagnostico';
 import { NextResponse } from 'next/server';
 import { esEstadoDisponibilidad, plazoConfirmacion } from '../../../../lib/disponibilidad';
 import type { FotoDrive } from '../../../../lib/fotos-drive';
 import { esZonaPublica } from '../../../../lib/zona-publica';
+import { separarUbicacion } from '../../../../lib/ciudades-phoenix';
 import { ErrorDrive, fotoParaPanel, identificadorDrive } from '../../drive';
-import { crearCopiaPortada } from '../../portada-drive';
 import { camposFicha, camposInventario, urlPublica } from './campos';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
 
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
   const { data, error } = await consulta.overrideTypes<{ id: string; fotos_drive?: FotoDrive[] }[], { merge: false }>();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return respuestaFallo('propiedades.escribir', error);
   }
 
   const filas = paginar ? data.slice(0, porPagina) : data;
@@ -65,18 +66,22 @@ export async function PATCH(req: Request) {
 
     const { data, error } = await supabaseAdmin.from('propiedades')
       .update({ precio }).eq('id', id).eq('precio', precio_anterior).not('publicada_en', 'is', null)
-      .select('precio,textos_version,script_fb_es_aprobado,script_fb_en_aprobado,script_wa_vip_aprobado,script_filtro_curiosos_aprobado')
+      .select('precio,ficha_version,textos_version,script_fb_es_aprobado,script_fb_en_aprobado,script_wa_vip_aprobado,script_filtro_curiosos_aprobado')
       .maybeSingle();
-    if (error) return NextResponse.json({ error: 'No se pudo guardar el precio' }, { status: 500 });
+    if (error) return respuestaFallo('propiedades.precio', error);
     if (!data) {
       return NextResponse.json({ error: 'La ficha debe estar publicada y conservar el precio que viste. Recarga el inventario.' }, { status: 409 });
     }
     return NextResponse.json({ ficha: data }, { headers: { 'Cache-Control': 'private, no-store' } });
   }
 
-  if (body.accion === 'guardar_borrador' || body.accion === 'publicar') {
+  if (body.accion === 'guardar_borrador' || body.accion === 'publicar' || body.accion === 'actualizar_material') {
+    if (!Number.isSafeInteger(body.ficha_version) || body.ficha_version < 0) {
+      return NextResponse.json({ error: 'Recarga la ficha para obtener su versión.' }, { status: 400 });
+    }
     let cambios;
-    const publicar = body.accion === 'publicar';
+    const publicar = body.accion !== 'guardar_borrador';
+    const nuevaPublicacion = body.accion === 'publicar';
     let zona: string | undefined;
     let portada: string | null = null;
     let portadaDrive: string | null = null;
@@ -94,11 +99,12 @@ export async function PATCH(req: Request) {
           throw new Error('Indica si acabas de confirmar la disponibilidad');
         }
         const { data: ficha, error } = await supabaseAdmin.from('propiedades')
-          .select('ciudad_zona,estado,portada_drive_id,imagen_portada,drive_url,fotos_drive')
-          .eq('id', id).is('publicada_en', null).maybeSingle();
-        if (error) return NextResponse.json({ error: 'No se pudo consultar el borrador' }, { status: 500 });
-        if (!ficha) return NextResponse.json({ error: 'Recarga el inventario para revisar el borrador.' }, { status: 409 });
+          .select('ciudad_zona,estado,portada_drive_id,imagen_portada,drive_url,fotos_drive,publicada_en')
+          .eq('id', id).eq('ficha_version', body.ficha_version).maybeSingle();
+        if (error) return respuestaFallo('propiedades.consultar_borrador', error);
+        if (!ficha || nuevaPublicacion !== (ficha.publicada_en === null)) return NextResponse.json({ error: 'Recarga el inventario para revisar el borrador.' }, { status: 409 });
         if (!esZonaPublica(ficha.ciudad_zona)) throw new Error('Guarda solo la ciudad o ZIP en la zona pública.');
+        if (!separarUbicacion(ficha.ciudad_zona).ciudad) throw new Error('Selecciona una ciudad del área de Phoenix antes de publicar.');
         zona = ficha.ciudad_zona;
         if ((body.zona_revisada !== undefined && body.zona_revisada !== zona)
           || (portadaDrive !== (ficha.portada_drive_id ?? null))
@@ -106,22 +112,33 @@ export async function PATCH(req: Request) {
           return NextResponse.json({ error: 'La zona o las fotos cambiaron. Revisa la ficha de nuevo.' }, { status: 409 });
         }
         if (body.confirmar_disponibilidad && ficha.estado !== 'disponible') throw new Error('Revisa el estado de la ficha.');
-        const copia = portadaDrive ? await crearCopiaPortada(ficha.fotos_drive, portadaDrive) : undefined;
+        const { portada_publica_id, galeria_publica_ids } = body;
+        const uuid = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+        if (body.material_revisado !== true || typeof portada_publica_id !== 'string' || !uuid.test(portada_publica_id)
+          || !Array.isArray(galeria_publica_ids) || galeria_publica_ids.length > 12
+          || !galeria_publica_ids.every((foto) => typeof foto === 'string' && uuid.test(foto))) {
+          throw new Error('Prepara y revisa las fotos públicas antes de publicar.');
+        }
         const ahora = new Date().toISOString();
         cambios = {
-          publicada_en: ahora,
+          ...(nuevaPublicacion && { publicada_en: ahora }),
           ...(body.confirmar_disponibilidad && { ultima_confirmacion: ahora }),
-          ...(copia && { portada_webp: copia }),
+          portada_publica_id, galeria_publica_ids: [...new Set(galeria_publica_ids)],
         };
       } else {
-        cambios = await camposFicha(body.ficha);
+        const { data: anterior, error } = await supabaseAdmin.from('propiedades')
+          .select('drive_url,fotos_drive').eq('id', id).eq('ficha_version', body.ficha_version).is('publicada_en', null).maybeSingle();
+        if (error) return respuestaFallo('borrador.consultar', error);
+        if (!anterior) return NextResponse.json({ error: 'La ficha cambió. Tu edición se conserva. Recarga el inventario.' }, { status: 409 });
+        cambios = await camposFicha(body.ficha, anterior);
       }
     } catch (error) {
       return NextResponse.json({ error: (error as Error).message }, { status: error instanceof ErrorDrive ? error.status : 400 });
     }
 
     let query = supabaseAdmin.from('propiedades').update(cambios)
-      .eq('id', id).is('publicada_en', null);
+      .eq('id', id).eq('ficha_version', body.ficha_version);
+    query = nuevaPublicacion || !publicar ? query.is('publicada_en', null) : query.not('publicada_en', 'is', null);
     if (publicar) {
       query = query.eq('ciudad_zona', zona!);
       if (body.confirmar_disponibilidad) query = query.eq('estado', 'disponible');
@@ -133,11 +150,11 @@ export async function PATCH(req: Request) {
     const { data, error } = await query.select('id').maybeSingle();
 
     if (error?.code === '23514' && publicar) {
-      return NextResponse.json({ error: 'Completa la zona, un precio mayor que cero y la portada antes de publicar' }, { status: 400 });
+      return NextResponse.json({ error: 'Revisa zona, precio y que las fotos preparadas correspondan a esta versión de la ficha' }, { status: 400 });
     }
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return respuestaFallo('propiedades.escribir', error);
     if (!data) {
-      return NextResponse.json({ error: 'La ficha o sus enlaces cambiaron. Vuelve a cargar el inventario.' }, { status: 409 });
+      return NextResponse.json({ error: 'Otra sesión cambió esta ficha. Tu edición sigue en el formulario. Recarga el inventario y revisa los cambios antes de volver a guardar.' }, { status: 409 });
     }
     return NextResponse.json({ ok: true });
   }
@@ -152,9 +169,9 @@ export async function PATCH(req: Request) {
     : { estado };
   const { data, error } = await supabaseAdmin.from('propiedades')
     .update(cambios).eq('id', id)
-    .select('id,estado,ultima_confirmacion').maybeSingle();
+    .select('id,estado,ultima_confirmacion,ficha_version').maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return respuestaFallo('propiedades.escribir', error);
   if (!data) return NextResponse.json({ error: 'La ficha ya no existe' }, { status: 404 });
   return NextResponse.json({ ok: true, disponibilidad: data });
 
@@ -173,7 +190,7 @@ export async function DELETE(req: Request) {
     .eq('id', id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return respuestaFallo('propiedades.escribir', error);
   }
 
   return NextResponse.json({ ok: true });

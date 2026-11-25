@@ -1,8 +1,9 @@
 import { normalizarWhatsApp, perfilesVip } from '../../../lib/compradores-vip';
-import { supabaseAdmin } from '../admin-access';
+import { leerEnvioPublico, registrarEnvioPublico } from '../captacion-publica';
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
+  const body = await leerEnvioPublico(request).catch(() => null);
+  if (body?.sitio_web) return Response.json({ ok: true }, { status: 201 });
   const nombre = typeof body?.nombre === 'string' ? body.nombre.trim() : '';
   const whatsapp = normalizarWhatsApp(body?.whatsapp, body?.pais);
   const perfil = body?.perfil;
@@ -16,9 +17,5 @@ export async function POST(request: Request) {
     }, { status: 400 });
   }
 
-  const { error } = await supabaseAdmin.from('leads_compradores')
-    .insert({ nombre, whatsapp, perfil, tiene_itin });
-  if (error) return Response.json({ error: 'No se pudo guardar el registro. Intenta de nuevo.' }, { status: 500 });
-
-  return Response.json({ ok: true }, { status: 201 });
+  return registrarEnvioPublico('vip', { nombre, whatsapp, perfil, tiene_itin });
 }

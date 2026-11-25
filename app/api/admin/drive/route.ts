@@ -1,3 +1,4 @@
+import { respuestaFallo } from '../../../../lib/diagnostico';
 import { rejectUnauthorizedAdmin } from '../../admin-access';
 import { abrirFotoDrive, ErrorDrive, fotoParaPanel, listarFotosDrive } from '../../drive';
 import { descargarOriginalDrive } from '../../foto-original-drive';
@@ -25,7 +26,10 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (error) {
-    if (error instanceof ErrorDrive) return Response.json({ error: error.message }, { status: error.status });
-    return Response.json({ error: 'No se pudieron cargar las fotos de Drive' }, { status: 502 });
+    if (error instanceof ErrorDrive) {
+      if (error.status >= 422) return respuestaFallo('drive.cargar', error, error.message, error.status);
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+    return respuestaFallo('drive.cargar_inesperado', error, 'No se pudieron cargar las fotos de Drive.', 502);
   }
 }

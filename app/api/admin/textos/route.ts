@@ -1,3 +1,4 @@
+import { respuestaFallo } from '../../../../lib/diagnostico';
 import { canalesTexto, MAX_TEXTO, mismasCondiciones, requisitosTextos, type CanalTexto } from '../../../../lib/textos-propiedad';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
 import { camposAnuncio, datosAnuncio, generarTextos, validarCondiciones, type FichaAnuncio } from './generador';
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
     const { data: ficha, error: consulta } = await supabaseAdmin.from('propiedades')
       .select([...camposAnuncio, 'condiciones_texto'].join(',')).eq('id', id).eq('textos_version', version).maybeSingle()
       .overrideTypes<(FichaAnuncio & { condiciones_texto: unknown }) | null, { merge: false }>();
-    if (consulta) return error('No se pudo cargar la ficha', 500);
+    if (consulta) return respuestaFallo('textos.consultar', consulta);
     if (!ficha) return error('La ficha o sus textos cambiaron. Recarga el inventario.', 409);
 
     const { condiciones_texto, ...datosFicha } = ficha;
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
     consulta = valor == null ? consulta.is(campo, null) : consulta.eq(campo, valor);
   }
   const { data: textos, error: fallo } = await consulta.select(camposDevueltos).maybeSingle();
-  if (fallo) return error('No se pudieron guardar los textos', 500);
+  if (fallo) return respuestaFallo('textos.guardar', fallo);
   if (!textos) return error('La ficha o sus textos cambiaron. Recarga el inventario.', 409);
 
   return Response.json({ textos, origen }, { headers: { 'Cache-Control': 'private, no-store' } });

@@ -45,17 +45,19 @@ export function DescargarSeleccionDrive({ fotos, abrirOriginal }: { fotos: FotoD
   );
 }
 
-export function VistaFotoDrive({ foto, abrir, alCargar }: {
+export function VistaFotoDrive({ foto, abrir, alCargar, miniatura = false }: {
   foto: FotoDrive;
   abrir: AbrirFoto;
   alCargar?: () => void;
+  miniatura?: boolean;
 }) {
   const [imagen, setImagen] = useState<{ url: string; id: string } | null>(null);
   const [error, setError] = useState<{ id: string; mensaje: string } | null>(null);
   const [usarEnlaceDirecto, setUsarEnlaceDirecto] = useState(false);
+  const [usarProxy, setUsarProxy] = useState(false);
 
   useEffect(() => {
-    if (foto.miniaturaUrl) return;
+    if (!usarProxy && (foto.miniaturaDrive || foto.miniaturaUrl)) return;
     const controller = new AbortController();
     let url: string | undefined;
     abrir(foto, controller.signal).then((blob) => {
@@ -71,9 +73,10 @@ export function VistaFotoDrive({ foto, abrir, alCargar }: {
       controller.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [foto, abrir]);
+  }, [foto, abrir, usarProxy]);
 
   if (error?.id === foto.id) {
+    if (miniatura) return <span role="alert" className="p-3 text-center">Foto no disponible. Pulsa para revisar.</span>;
     const enlace = new URL(`https://drive.google.com/file/d/${encodeURIComponent(foto.id)}/view`);
     if (foto.resourceKey) enlace.searchParams.set('resourcekey', foto.resourceKey);
     return (
@@ -83,22 +86,25 @@ export function VistaFotoDrive({ foto, abrir, alCargar }: {
       </div>
     );
   }
-  const miniatura = usarEnlaceDirecto ? foto.miniaturaUrl : foto.miniaturaDrive ?? foto.miniaturaUrl;
-  const src = miniatura ?? (imagen?.id === foto.id ? imagen.url : null);
-  if (!src) return <p role="status">Cargando foto…</p>;
+  const enlace = usarEnlaceDirecto ? foto.miniaturaUrl : foto.miniaturaDrive ?? foto.miniaturaUrl;
+  const src = !usarProxy && enlace ? enlace : imagen?.id === foto.id ? imagen.url : null;
+  if (!src) return <span role="status">Cargando foto…</span>;
 
-  return (
-    <figure className="space-y-2">
-      {/* La vista previa usa una URL local creada desde la respuesta privada. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={foto.name} onLoad={alCargar}
-        onError={() => {
-          if (foto.miniaturaDrive && foto.miniaturaUrl && !usarEnlaceDirecto) setUsarEnlaceDirecto(true);
-          else setError({ id: foto.id, mensaje: 'Drive no devolvió una imagen para esta vista. Abre el archivo en Drive para verificarlo.' });
-        }} className="max-h-[65vh] w-full rounded-lg object-contain" />
-      <figcaption className="break-all text-sm text-zinc-300">{foto.name}</figcaption>
-    </figure>
+  const imagenVisible = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={miniatura ? '' : foto.name} onLoad={alCargar} loading={miniatura ? 'lazy' : undefined}
+      referrerPolicy="no-referrer"
+      onError={() => {
+        if (!usarProxy && foto.miniaturaDrive && foto.miniaturaUrl && !usarEnlaceDirecto) setUsarEnlaceDirecto(true);
+        else if (!usarProxy) setUsarProxy(true);
+        else setError({ id: foto.id, mensaje: 'No se pudo mostrar la imagen. Abre el archivo en Drive para verificarlo.' });
+      }} className={miniatura ? 'absolute inset-0 h-full w-full object-cover' : 'max-h-[65vh] w-full rounded-lg object-contain'} />
   );
+  if (miniatura) return imagenVisible;
+  return <figure className="space-y-2">
+    {imagenVisible}
+    <figcaption className="break-all text-sm text-zinc-300">{foto.name}</figcaption>
+  </figure>;
 }
 
 export function DescargarFotoDrive({ foto, abrir }: { foto: FotoDrive; abrir: AbrirFoto }) {
@@ -185,7 +191,7 @@ export function SelectorFotosDrive({
         className="rounded-lg bg-zinc-800 px-3 py-2 font-medium disabled:opacity-50">
         {cargando ? 'Cargando fotos…' : 'Ver fotos de la carpeta'}
       </button>
-      <p className="text-zinc-400">Revisa los nombres y las fotos. La portada y la carpeta pública deben ocultar la dirección exacta.</p>
+      <p className="text-zinc-400">Revisa las fotos y elige cuáles usar. Antes de publicar, revisa que las copias públicas oculten la dirección exacta.</p>
       {seleccionadas.length > 0 && <DescargarSeleccionDrive fotos={seleccionadas} abrirOriginal={abrirOriginal} />}
       {error && <p role="alert" className="text-red-300">{error}</p>}
       {fotos?.length === 0 && <p>No hay fotos compatibles para descargar en esta carpeta.</p>}
@@ -210,7 +216,6 @@ export function SelectorFotosDrive({
         <ul className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
           {visibles.map((foto) => {
             const elegida = seleccionadas.some(({ id }) => id === foto.id);
-            const miniatura = foto.miniaturaDrive ?? foto.miniaturaUrl;
             return (
               <li key={foto.id} className={`min-w-0 overflow-hidden rounded-xl border bg-zinc-950 ${elegida ? 'border-amber-500' : 'border-zinc-800'}`}>
                 <button type="button" onClick={() => {
@@ -218,12 +223,7 @@ export function SelectorFotosDrive({
                   requestAnimationFrame(() => document.getElementById(idVista)?.scrollIntoView({ block: 'nearest' }));
                 }} aria-label={`Ampliar ${foto.name}`}
                   className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-zinc-800">
-                  <span className="px-2 text-zinc-300">Ver foto</span>
-                  {miniatura && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={miniatura} src={miniatura} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover"
-                      onError={(event) => { event.currentTarget.hidden = true; }} />
-                  )}
+                  <VistaFotoDrive key={foto.id} foto={foto} abrir={abrir} miniatura />
                 </button>
                 <div className="space-y-2 p-3">
                   <label className="flex min-w-0 items-center gap-2">

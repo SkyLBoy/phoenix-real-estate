@@ -68,8 +68,8 @@ Prepara el cambio de código y SQL para la misma ventana. El catálogo quedará
 vacío hasta que vuelvas a publicar fichas desde el panel.
 
 Las propiedades existentes conservan sus datos, textos e ID y pasan a borrador
-privado. Desde el panel, completa los campos que falten, abre la portada y la
-carpeta de Drive para revisarlas y pulsa **Confirmar revisión y publicar**.
+privado. Desde el panel, completa los campos que falten, prepara y revisa las
+copias de las fotos públicas y pulsa **Confirmar revisión y publicar**.
 El catálogo lee de `propiedades_publicas`. La vista respeta RLS y expone los
 campos públicos solo para fichas publicadas. El formulario VIP conserva la
 inserción anónima y su listado queda protegido.
@@ -100,7 +100,7 @@ el servidor. [Configuración de claves](https://docs.cloud.google.com/docs/authe
 El selector admite JPEG, PNG, WebP, GIF y AVIF que Drive muestre en el primer
 nivel. **Usar de portada** incluye esa imagen en la selección. Se puede
 descargar cada original desde el selector o la ficha guardada. La ficha pública
-muestra la portada y mantiene el enlace a la carpeta completa. También puedes
+muestra las copias revisadas en una galería propia. También puedes
 descargar los originales seleccionados en un solo ZIP desde el selector o
 desde el inventario (hasta 60 fotos, 24 MB por archivo y 80 MB por selección).
 
@@ -147,9 +147,8 @@ Sobre la base existente, aplica las siguientes migraciones en orden desde el SQL
    coincidía exactamente con la publicación quedan pendientes de verificar.
    Las confirmaciones posteriores se conservan.
 2. `supabase/migrations/20261120001200_portada_optimizada.sql`. Guarda la
-   portada revisada de Drive en formato WebP junto con la publicación. Las
-   portadas de Drive anteriores se copian la primera vez que se consultan si
-   Google aún permite leerlas. Las portadas por URL externa siguen usando esa URL.
+   portada revisada de Drive en formato WebP. El mecanismo de preparación se
+   actualiza con la migración de material público descrita más abajo.
 
 Al publicar verás la zona que recibirá el visitante. Marca la confirmación de
 disponibilidad cuando acabes de verificarla con el proveedor. El inventario
@@ -174,3 +173,118 @@ público de esta versión registra a los compradores mediante el servidor.
 En `/admin`, pulsa **Ver compradores** y usa **Abrir WhatsApp** para dar
 seguimiento manual. El formulario pide elegir México (+52) o Estados Unidos (+1) para
 números locales de diez dígitos.
+
+## Ciudad y ZIP del área de Phoenix
+
+El catálogo usa un selector fijo de ciudades y un filtro de ZIP combinable.
+En el panel, elige la ciudad y escribe el ZIP público. El pegado de datos
+reconoce localidades coincidentes con el selector. Revisa cualquier ubicación
+ambigua antes de publicar.
+
+Aplica `supabase/migrations/20261125001300_ciudad_zip.sql` en el SQL Editor
+después de las migraciones anteriores. Añade las columnas calculadas `ciudad`
+y `zip`, conservando `ciudad_zona` y los enlaces de las fichas existentes.
+La consulta comentada al final identifica ubicaciones sin ciudad reconocida.
+El catálogo interpreta también las ubicaciones anteriores mientras aplicas el SQL.
+Las opciones estables se mantienen en `lib/ciudades-phoenix.ts` y en la función
+SQL de la migración.
+
+## Versiones de borrador, captación y pruebas de base
+
+Para actualizar una base existente que ya tiene las migraciones anteriores,
+ejecuta en el SQL Editor, antes de usar esta versión del panel:
+
+1. `supabase/migrations/20261125001400_version_ficha.sql`.
+2. `supabase/migrations/20261125001500_proteger_captacion.sql`.
+
+Abre de nuevo el panel para cargar `ficha_version`. Si otra sesión cambió el
+borrador, el guardado devuelve un conflicto y conserva tu edición local.
+«Recargar inventario» obtiene los datos recientes. Compara los cambios antes
+de cargar la ficha de nuevo en el formulario.
+
+La captación usa una función de PostgreSQL que registra la solicitud y su
+huella en una transacción. Los envíos idénticos se reconocen durante 24 horas.
+Una corrección del registro VIP actualiza los datos del teléfono existente.
+Un propietario puede ofrecer varias casas diferentes. Se permiten hasta cinco
+envíos distintos por teléfono y hora, sumando ambos formularios, y 300 envíos
+por hora en total. Un límite devuelve HTTP 429 con `Retry-After`. Los reintentos
+idénticos aceptados anteriormente devuelven éxito sin consumir otra cuota.
+El campo oculto `sitio_web` descarta automatizaciones simples. Estos controles
+reducen el abuso y se comparten entre instancias del servidor.
+
+Las huellas se calculan con HMAC usando la clave de servidor de Supabase.
+La tabla temporal de control conserva únicamente huellas, canal y fecha,
+y elimina registros mayores de 24 horas al procesar un envío. Rotar la clave
+de servidor cambia las huellas y reinicia de hecho su ventana de reconocimiento.
+Los límites se pueden ajustar en la función SQL. La protección falla con un
+mensaje de reintento si la base no está disponible.
+
+Para una instalación vacía, el esquema inicial está versionado en
+`supabase/migrations/20261118000000_esquema_inicial.sql`. Aplica toda la cadena
+por orden de nombre. En una base existente, conserva las migraciones ya
+aplicadas. El esquema inicial usa `create table if not exists` y no reconstruye
+ni reemplaza tablas anteriores.
+
+- `npm test` ejecuta pruebas de rutas, componentes y PostgreSQL en memoria.
+- `npm run test:db` aplica todas las migraciones desde cero en PGlite y comprueba
+  permisos anónimos/autenticados, versiones, triggers, idempotencia, límites y
+  recuperación tras una escritura fallida.
+- `npm run test:e2e` ejecuta los recorridos móviles en Playwright. Usa una copia
+  temporal aislada del proyecto, fuentes del sistema y respuestas simuladas de
+  red. Comprueba que los formularios preserven datos tras un rechazo y que el
+  panel envíe su versión al guardar. También comprueba los filtros, la paginación,
+  la actualización al volver a la pestaña y la revisión de fotos antes de publicar.
+  El servidor de ensayo ocupa el puerto 3107.
+
+Para los recorridos de navegador, instala Chromium con
+`npx playwright install chromium` o configura `PLAYWRIGHT_CHROMIUM_EXECUTABLE`
+con la ruta de un Chrome/Chromium instalado. Las pruebas requieren Node.js
+22.15 o posterior. La suite PostgreSQL no necesita claves ni acceso a Supabase.
+Las políticas del despliegue real requieren además un ensayo sobre su entorno.
+
+
+## Mantenimiento del catálogo y fotos públicas
+
+Después de las migraciones anteriores, aplica
+`supabase/migrations/20261125001600_material_publico.sql` antes de desplegar
+esta versión. Conserva las referencias originales para el operador y limita
+la vista pública a las copias revisadas.
+
+En una ficha guardada, pulsa **Revisar ficha y fotos**, elige hasta 12 fotos
+(la portada está incluida) y pulsa **Preparar fotos públicas**. El servidor
+prepara una imagen por solicitud. Revisa las copias que aparecen, marca que
+ocultan el domicilio y confirma la publicación. Los nombres de archivos, las
+claves de Drive y el enlace a la carpeta de origen quedan reservados al panel.
+Para una portada alternativa por URL, sube una copia de la imagen de hasta
+4 MB. El servidor procesa ese archivo para evitar descargar URLs arbitrarias.
+
+Las fichas ya publicadas tienen **Actualizar fotos públicas**. Las portadas
+WebP que ya estaban guardadas siguen disponibles. Las antiguas que carezcan
+de copia requieren prepararla desde el panel. Las visitas públicas sólo leen
+material guardado y revalidan su ETag, incluso cuando Drive está caído. Una
+ficha retirada deja de servir fotos. Los archivos que el visitante haya
+descargado previamente permanecen en su dispositivo.
+
+Las copias se guardan en PostgreSQL con un máximo de 2 MB por foto optimizada.
+Cada preparación tiene una reserva de 90 segundos que evita trabajo duplicado.
+El reintento aprovecha las fotos terminadas y puede recuperar una reserva
+vencida. Al preparar material, se limpian las copias antiguas sin referencias;
+eliminar una ficha elimina sus copias. Actualizar la galería conserva el enlace
+individual y exige revisar la versión actual de la ficha.
+
+Puedes guardar correcciones de datos sin consultar Drive cuando mantengas
+la carpeta y uses fotos ya verificadas. Una selección que incorpore archivos
+nuevos vuelve a comprobar su acceso.
+
+El catálogo consulta páginas de 12 propiedades con ciudad y ZIP filtrados
+en el servidor y un conteo total correspondiente a esos filtros. Cambiar un
+filtro vuelve a la primera página. Se actualiza al recuperar el foco, al volver
+a una pestaña visible, cada minuto mientras está visible o con **Actualizar
+catálogo**. Las respuestas de consultas anteriores se cancelan al cambiar los
+filtros.
+
+Los errores de servidor incluyen una referencia de incidente que puede
+buscarse en los logs del despliegue. Se registran operación, código permitido
+y estado HTTP cuando existe. Se excluyen mensajes originales, teléfonos,
+domicilios, claves, tokens y cuerpos de peticiones. El panel separa acceso,
+peticiones autenticadas, inventario, tarjetas y revisión de material en módulos.

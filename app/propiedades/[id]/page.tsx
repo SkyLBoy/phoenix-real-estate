@@ -1,7 +1,8 @@
+import { GaleriaPublica } from '@/app/galeria-publica';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
-import { ArrowLeft, FolderOpen, House, MessageCircle, TrendingUp } from 'lucide-react';
+import { ArrowLeft, House, MessageCircle, TrendingUp } from 'lucide-react';
 import { Suspense } from 'react';
 import { PortadaPublica } from '@/app/portada-publica';
 import { importeUsd, diferenciaArv } from '@/app/metricas-propiedad';
@@ -83,8 +84,11 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
           </>
         ) : (
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.68fr)_minmax(0,1fr)]">
-            <div className="listing-photo listing-photo-detail rounded-xl">
-              <PortadaPublica src={enlacePortada(prop)} zona={prop.ciudad_zona} detalle />
+<div className="space-y-5">
+              <div className="listing-photo listing-photo-detail rounded-xl">
+                <PortadaPublica src={enlacePortada(prop)} zona={prop.ciudad_zona} detalle />
+              </div>
+              <GaleriaPublica propiedad={prop.id} />
             </div>
             <div className="public-panel space-y-5 p-5 md:p-7">
               <div>
@@ -104,11 +108,7 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
                 {contacto ? <a href={contacto} target="_blank" rel="noopener noreferrer" className="public-action public-action-primary">
                   <MessageCircle size={17} aria-hidden="true" /> Consultar por WhatsApp
                 </a> : <Link href="/#lista-vip" className="public-action public-action-primary">Unirme a la Lista VIP</Link>}
-                {prop.drive_url && (
-                  <a href={prop.drive_url} target="_blank" rel="noopener noreferrer" className="public-action">
-                    <FolderOpen size={17} aria-hidden="true" /> Ver fotos y videos en Drive
-                  </a>
-                )}
+
               </div>
             </div>
           </div>

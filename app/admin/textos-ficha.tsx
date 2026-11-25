@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { EstadoDisponibilidad } from '@/lib/disponibilidad';
 import {
   canalesTexto, clavesCondiciones, clavesRasgos, condicionesTexto, MAX_TEXTO, mismasCondiciones,
   publicosTexto, rasgosPublicos, textosPropiedad,
@@ -11,12 +12,13 @@ type PeticionTexto =
   | { accion: 'generar'; condiciones: CondicionesTexto; canal?: CanalTexto }
   | { accion: 'guardar' | 'aprobar'; canal: CanalTexto; texto: string };
 
-function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, condicionesEditadas, generar, enviar }: {
+function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, disponible, condicionesEditadas, generar, enviar }: {
   canal: CanalTexto;
   texto: string;
   aprobado: boolean;
   ocupado: boolean;
   puedeGenerar: boolean;
+  disponible: boolean;
   condicionesEditadas: boolean;
   generar: (canal: CanalTexto, hayCambiosLocales: boolean) => void;
   enviar: (peticion: PeticionTexto) => Promise<void>;
@@ -25,6 +27,7 @@ function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, condicione
   const [avisoCopia, setAvisoCopia] = useState('');
   const cambio = borrador !== texto;
   const copiar = async () => {
+    if (!disponible) return;
     try {
       await navigator.clipboard.writeText(texto);
       setAvisoCopia('Texto copiado.');
@@ -54,9 +57,9 @@ function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, condicione
         </button>
         <button type="button" disabled={ocupado || !cambio || !borrador.trim()}
           onClick={() => void enviar({ accion: 'guardar', canal, texto: borrador })}>Guardar texto</button>
-        <button type="button" disabled={ocupado || condicionesEditadas || cambio || !texto || aprobado}
+        <button type="button" disabled={!disponible || ocupado || condicionesEditadas || cambio || !texto || aprobado}
           onClick={() => void enviar({ accion: 'aprobar', canal, texto })}>Aprobar texto</button>
-        <button type="button" disabled={ocupado || condicionesEditadas || cambio || !aprobado || !texto}
+        <button type="button" disabled={!disponible || ocupado || condicionesEditadas || cambio || !aprobado || !texto}
           onClick={copiar}>Copiar texto final</button>
       </div>
       {avisoCopia && <p role="status" className="text-xs text-zinc-300">{avisoCopia}</p>}
@@ -64,12 +67,19 @@ function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, condicione
   );
 }
 
-export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
+export function TextosDeFicha({ ficha, estado, zona, requisitos, editarBorrador, guardar }: {
   ficha: TextosFicha;
+  estado: EstadoDisponibilidad;
+  zona: string;
   requisitos: string[];
   editarBorrador?: () => void;
   guardar: (version: number, peticion: PeticionTexto) => Promise<{ origen?: string }>;
 }) {
+  const disponible = estado === 'disponible';
+  const respuestaAlternativa = estado === 'en_contrato'
+    ? `La propiedad en ${zona} está en contrato. ¿Quieres que busquemos otra opción en esa zona?`
+    : `La propiedad en ${zona} ya no está disponible. ¿Quieres que busquemos otra opción en esa zona?`;
+  const [avisoAlternativa, setAvisoAlternativa] = useState('');
   const [condiciones, setCondiciones] = useState(ficha.condiciones_texto ?? {});
   const [enganche, setEnganche] = useState(String(condiciones.enganche ?? ''));
   const [ocupado, setOcupado] = useState(false);
@@ -165,6 +175,20 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
           {ocupado ? 'Procesando…' : 'Generar cuatro textos'}
         </button>
       </fieldset>
+      {!disponible && <div className="space-y-2 rounded-lg border border-zinc-700 p-3">
+        <p>La ficha está fuera del inventario disponible. Puedes responder al interesado con este mensaje.</p>
+        <textarea aria-label="Respuesta sobre la propiedad retirada" readOnly rows={3} value={respuestaAlternativa}
+          className="w-full rounded border border-zinc-700 bg-zinc-950 p-2" />
+        <button type="button" className="public-action" onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(respuestaAlternativa);
+            setAvisoAlternativa('Respuesta copiada.');
+          } catch {
+            setAvisoAlternativa('Selecciona el mensaje para copiarlo.');
+          }
+        }}>Copiar respuesta con alternativas</button>
+        {avisoAlternativa && <p role="status">{avisoAlternativa}</p>}
+      </div>}
       {requisitos.length > 0 && (
         <div className="space-y-2 text-zinc-300">
           <ul className="list-inside list-disc">
@@ -179,7 +203,7 @@ export function TextosDeFicha({ ficha, requisitos, editarBorrador, guardar }: {
         {canalesTexto.map((canal) => (
           <EditorTexto key={JSON.stringify([canal, ficha[canal], generaciones[canal]])}
             canal={canal} texto={ficha[canal] ?? ''} aprobado={ficha[`${canal}_aprobado`] === true}
-            ocupado={ocupado} puedeGenerar={puedeGenerar} condicionesEditadas={condicionesEditadas}
+            ocupado={ocupado} puedeGenerar={puedeGenerar} disponible={disponible} condicionesEditadas={condicionesEditadas}
             generar={generar} enviar={enviar} />
         ))}
       </div>
