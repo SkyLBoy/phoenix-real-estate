@@ -1,7 +1,7 @@
 import { respuestaFallo } from '../../../../lib/diagnostico';
 import { rejectUnauthorizedAdmin } from '../../admin-access';
 import { abrirFotoDrive, ErrorDrive, fotoParaPanel, listarFotosDrive } from '../../drive';
-import { descargarOriginalDrive } from '../../foto-original-drive';
+import { descargarOriginalDrive, descargarVistaDrive } from '../../foto-original-drive';
 
 export async function GET(request: Request) {
   const denied = await rejectUnauthorizedAdmin(request);
@@ -10,8 +10,8 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   try {
     const id = params.get('foto');
-    if (id && params.get('original') === '1') {
-      const { bytes, tipo } = await descargarOriginalDrive(id, params.get('clave') ?? undefined);
+    if (id && (params.get('original') === '1' || params.get('vista') === '1')) {
+      const { bytes, tipo } = await (params.get('vista') === '1' ? descargarVistaDrive : descargarOriginalDrive)(id, params.get('clave') ?? undefined);
       const imagen = new Blob([Uint8Array.from(bytes)]);
       return new Response(imagen.stream(), { headers: {
         'Content-Type': tipo,

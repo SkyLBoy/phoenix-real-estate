@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { ArrowLeft, House, MessageCircle, TrendingUp } from 'lucide-react';
 import { Suspense } from 'react';
-import { PortadaPublica } from '@/app/portada-publica';
 import { importeUsd, diferenciaArv } from '@/app/metricas-propiedad';
 import { CAMPOS_PUBLICOS, enlacePortada, enlaceWhatsApp, type PropiedadPublica } from '@/lib/propiedades-publicas';
 import { cargarSimilares } from '@/lib/propiedades-similares';
@@ -85,10 +84,7 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
         ) : (
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.68fr)_minmax(0,1fr)]">
 <div className="space-y-5">
-              <div className="listing-photo listing-photo-detail rounded-xl">
-                <PortadaPublica src={enlacePortada(prop)} zona={prop.ciudad_zona} detalle />
-              </div>
-              <GaleriaPublica propiedad={prop.id} />
+              <GaleriaPublica propiedad={prop.id} portada={enlacePortada(prop)} zona={prop.ciudad_zona} detalle />
             </div>
             <div className="public-panel space-y-5 p-5 md:p-7">
               <div>

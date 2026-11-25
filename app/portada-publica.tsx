@@ -3,10 +3,11 @@
 import { ImageOff } from 'lucide-react';
 import { useState } from 'react';
 
-export function PortadaPublica({ src, zona, detalle = false }: {
+export function PortadaPublica({ src, zona, detalle = false, descripcion }: {
   src: string | null;
   zona: string;
   detalle?: boolean;
+  descripcion?: string;
 }) {
   const [fallida, setFallida] = useState<string | null>(null);
 
@@ -21,7 +22,7 @@ export function PortadaPublica({ src, zona, detalle = false }: {
 
   // Las portadas usan fuentes externas dinámicas.
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={`Portada de propiedad en ${zona}`}
+  return <img src={src} alt={descripcion ?? `Portada de propiedad en ${zona}`}
     width={detalle ? 1600 : 800} height={detalle ? 900 : 600}
     loading={detalle ? 'eager' : 'lazy'} fetchPriority={detalle ? 'high' : undefined}
     onError={() => setFallida(src)} />;

@@ -3,6 +3,8 @@
 import { useEffect, useId, useState } from 'react';
 import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
 
+export type DescargarFotosDrive = (foto: FotoDrive, modo?: 'original' | 'vista') => Promise<Blob>;
+
 type AbrirFoto = (foto: FotoDrive, signal?: AbortSignal) => Promise<Blob>;
 
 function guardarDescarga(blob: Blob, nombre: string) {
@@ -16,17 +18,17 @@ function guardarDescarga(blob: Blob, nombre: string) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
-export function DescargarSeleccionDrive({ fotos, abrirOriginal }: { fotos: FotoDrive[]; abrirOriginal: AbrirFoto }) {
+export function DescargarSeleccionDrive({ fotos, abrirOriginal, nombrePropiedad }: { fotos: FotoDrive[]; abrirOriginal: DescargarFotosDrive; nombrePropiedad?: string }) {
   const [progreso, setProgreso] = useState(0);
   const [error, setError] = useState('');
 
-  const descargar = async () => {
+  const descargar = async (modo: 'original' | 'vista') => {
     setError('');
     setProgreso(1);
     try {
-      const { crearZipFotos } = await import('../../lib/zip-fotos');
-      const zip = await crearZipFotos(fotos, abrirOriginal, setProgreso);
-      guardarDescarga(zip, 'fotos-seleccionadas.zip');
+      const { crearZipFotos, nombreZipPropiedad } = await import('../../lib/zip-fotos');
+      const zip = await crearZipFotos(fotos, (foto) => abrirOriginal(foto, modo), setProgreso, modo === 'vista');
+      guardarDescarga(zip, nombreZipPropiedad(nombrePropiedad, modo === 'vista'));
     } catch (causa) {
       setError(causa instanceof Error ? causa.message : 'No se pudo preparar el ZIP. Inténtalo de nuevo.');
     } finally {
@@ -36,10 +38,16 @@ export function DescargarSeleccionDrive({ fotos, abrirOriginal }: { fotos: FotoD
 
   return (
     <div className="space-y-1">
-      <button type="button" disabled={progreso > 0} onClick={descargar}
-        className="public-action min-h-11" aria-live="polite">
-        {progreso ? `Preparando ZIP · ${progreso}/${fotos.length}` : `Descargar fotos seleccionadas (${fotos.length}) en ZIP`}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={progreso > 0} onClick={() => descargar('vista')}
+          className="public-action public-action-primary min-h-11">
+          Descargar vistas previas para Facebook ({fotos.length}) en ZIP
+        </button>
+        <button type="button" disabled={progreso > 0} onClick={() => descargar('original')}
+          className="public-action min-h-11">Descargar originales ({fotos.length}) en ZIP</button>
+      </div>
+      <p className="text-sm text-zinc-400">Las vistas previas son copias de lo que Drive permite visualizar. Pueden tener baja resolución; no son los originales. Su tamaño no se aumenta.</p>
+      {progreso > 0 && <p role="status">Preparando ZIP · {progreso}/{fotos.length}</p>}
       {error && <p role="alert" className="text-red-300">{error}</p>}
     </div>
   );
@@ -154,6 +162,7 @@ export function SelectorFotosDrive({
   listar,
   abrir,
   abrirOriginal,
+  nombrePropiedad,
 }: {
   carpeta: string;
   seleccionadas: FotoDrive[];
@@ -162,7 +171,8 @@ export function SelectorFotosDrive({
   alElegirPortada: (foto: FotoDrive) => void;
   listar: (carpeta: string) => Promise<FotoDrive[]>;
   abrir: AbrirFoto;
-  abrirOriginal: AbrirFoto;
+  abrirOriginal: DescargarFotosDrive;
+  nombrePropiedad?: string;
 }) {
   const idVista = useId();
   const [fotos, setFotos] = useState<FotoDrive[] | null>(null);
@@ -192,7 +202,7 @@ export function SelectorFotosDrive({
         {cargando ? 'Cargando fotos…' : 'Ver fotos de la carpeta'}
       </button>
       <p className="text-zinc-400">Revisa las fotos y elige cuáles usar. Antes de publicar, revisa que las copias públicas oculten la dirección exacta.</p>
-      {seleccionadas.length > 0 && <DescargarSeleccionDrive fotos={seleccionadas} abrirOriginal={abrirOriginal} />}
+      {seleccionadas.length > 0 && <DescargarSeleccionDrive fotos={seleccionadas} abrirOriginal={abrirOriginal} nombrePropiedad={nombrePropiedad} />}
       {error && <p role="alert" className="text-red-300">{error}</p>}
       {fotos?.length === 0 && <p>No hay fotos compatibles para descargar en esta carpeta.</p>}
       {fotos && seleccionadas.some((foto) => !fotos.some((disponible) => disponible.id === foto.id)) && (

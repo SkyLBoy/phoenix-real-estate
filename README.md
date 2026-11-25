@@ -288,3 +288,28 @@ buscarse en los logs del despliegue. Se registran operación, código permitido
 y estado HTTP cuando existe. Se excluyen mensajes originales, teléfonos,
 domicilios, claves, tokens y cuerpos de peticiones. El panel separa acceso,
 peticiones autenticadas, inventario, tarjetas y revisión de material en módulos.
+
+### ZIP para publicaciones desde Drive
+
+En el selector y en las fotos elegidas del inventario se ofrecen dos descargas:
+**Descargar vistas previas para Facebook** guarda las imágenes públicas que Drive
+permite visualizar, y **Descargar originales** solicita los archivos originales.
+Las vistas se entregan con su resolución disponible, sin ampliarlas ni prometer
+calidad de original. Pueden ser pequeñas aunque se solicite una vista mayor.
+El ZIP de vistas identifica las copias en sus nombres y usa la extensión del
+formato recibido. Un fallo en una foto detiene la descarga e identifica el archivo;
+no se entrega silenciosamente una selección incompleta. Los originales siguen
+requiriendo que el propietario permita descargarlos. Ambas operaciones del panel
+requieren una sesión administrativa válida. No se necesitan nuevas variables de
+entorno ni migraciones para esta opción.
+
+El nombre del ZIP usa la dirección privada de la ficha (por ejemplo,
+`3352 W Aire Libre Ave, Phoenix, AZ 85053.zip`). Si aún falta, usa la ubicación
+pública o un nombre de respaldo. La dirección se utiliza sólo en la descarga
+local del panel y no se agrega a la galería pública.
+
+El catálogo y el panel comparten un selector de ciudad con búsqueda integrada,
+lista de altura limitada y navegación con teclado. Las fotos públicas se recorren
+con flechas o deslizamiento horizontal en las tarjetas y en la ficha, sin abrir
+Drive. El carrusel sólo utiliza copias públicas revisadas; las tarjetas consultan
+su galería al acercarse a la parte visible de la pantalla.

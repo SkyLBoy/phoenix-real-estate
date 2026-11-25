@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react';
 import type { PropiedadPublica } from './propiedades-publicas';
 
 type Filtros = { ciudad: string; zip: string; pagina: number };
-type Pagina = { propiedades: PropiedadPublica[]; total: number; pagina: number; porPagina: number };
+type Pagina = { propiedades: PropiedadPublica[]; total: number; pagina: number; porPagina: number; precioDesde: number | null };
 
 export function useCatalogo() {
   const [filtros, setFiltros] = useState<Filtros>({ ciudad: '', zip: '', pagina: 0 });
-  const [resultado, setResultado] = useState<Pagina>({ propiedades: [], total: 0, pagina: 0, porPagina: 12 });
+  const [resultado, setResultado] = useState<Pagina>({ propiedades: [], total: 0, pagina: 0, porPagina: 12, precioDesde: null });
   const [estado, setEstado] = useState<'cargando' | 'listo' | 'error'>('cargando');
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);

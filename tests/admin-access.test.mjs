@@ -219,6 +219,17 @@ globalThis.fetch = async (input, init) => {
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades_publicas') {
     assert.equal(request.headers.get('authorization'), 'Bearer anon-key');
     assert.equal(url.searchParams.get('estado'), 'eq.disponible');
+    if (url.searchParams.get('select') === 'precio') {
+      assert.equal(url.searchParams.get('order'), 'precio.asc');
+      assert.equal(url.searchParams.get('limit'), '1');
+      let filas = [...properties.values()].filter((p) => p.publicada_en && p.estado === 'disponible' && p.precio != null);
+      const ciudad = url.searchParams.get('ciudad')?.slice(3);
+      const zip = url.searchParams.get('zip')?.slice(5,-1);
+      if (ciudad) filas = filas.filter((p) => p.ciudad === ciudad);
+      if (zip) filas = filas.filter((p) => p.zip?.startsWith(zip));
+      filas.sort((a,b) => a.precio-b.precio);
+      return Response.json(filas.slice(0,1).map((p) => ({precio:p.precio})));
+    }
     if (url.searchParams.get('select')?.startsWith('id,ciudad_zona,precio,arv')) {
       let filas = [...properties.values()].filter((p) => p.publicada_en && p.estado === 'disponible');
       const ciudad = url.searchParams.get('ciudad')?.slice(3);
@@ -261,7 +272,7 @@ globalThis.fetch = async (input, init) => {
   if (url.hostname === 'supabase.test' && url.pathname === '/rest/v1/propiedades') {
     switch (request.method) {
       case 'GET': {
-        if (url.searchParams.get('select') === 'portada_publica_id,galeria_publica_ids,portada_legacy_hash' || url.searchParams.get('select') === 'galeria_publica_ids') {
+        if (url.searchParams.get('select') === 'portada_publica_id,galeria_publica_ids,portada_legacy_hash' || ['galeria_publica_ids', 'galeria_publica_ids,portada_publica_id'].includes(url.searchParams.get('select'))) {
           assert.equal(url.searchParams.get('publicada_en'), 'not.is.null');
           assert.equal(url.searchParams.get('estado'), 'eq.disponible');
           const ficha = properties.get(url.searchParams.get('id').slice(3));
@@ -1362,11 +1373,12 @@ test('el catálogo pagina y filtra en la consulta con conteo total consistente',
       id:`p-${String(i).padStart(2,'0')}`,created_at:'2026-11-25',publicada_en:'2026-11-25',estado:'disponible',
       ciudad_zona:'Peoria, AZ 85345',ciudad:'Peoria',zip:'85345',precio:292000,
     });
+    properties.get('p-24').precio=250000;
     properties.set('otra',{id:'otra',created_at:'2026-11-25',publicada_en:'2026-11-25',estado:'disponible',ciudad:'Mesa',zip:'85201'});
     const primera = await (await catalogo(new Request('https://panel.test/api/catalogo?ciudad=Peoria&zip=853&pagina=0'))).json();
-    assert.equal(primera.total,25); assert.equal(primera.propiedades.length,12);
+    assert.equal(primera.total,25); assert.equal(primera.propiedades.length,12); assert.equal(primera.precioDesde,250000);
     const ultima = await (await catalogo(new Request('https://panel.test/api/catalogo?ciudad=Peoria&zip=853&pagina=2'))).json();
-    assert.equal(ultima.total,25); assert.equal(ultima.propiedades.length,1); assert.equal(ultima.propiedades[0].id,'p-24');
+    assert.equal(ultima.total,25); assert.equal(ultima.precioDesde,250000); assert.equal(ultima.propiedades.length,1); assert.equal(ultima.propiedades[0].id,'p-24');
     assert.equal((await catalogo(new Request('https://panel.test/api/catalogo?ciudad=Inventada'))).status,400);
     assert.equal((await catalogo(new Request('https://panel.test/api/catalogo?pagina=-1'))).status,400);
   } finally { properties.clear(); for (const [id,valor] of anteriores) properties.set(id,valor); }
@@ -1481,4 +1493,53 @@ test('el ZIP recupera originales tras la confirmación pública de descarga de D
     assert.equal(restringida.status, 403);
     assert.match((await restringida.json()).error, /desactivó las descargas/);
   } finally { globalThis.fetch = anterior; if (clave === undefined) delete process.env.GOOGLE_DRIVE_API_KEY; else process.env.GOOGLE_DRIVE_API_KEY = clave; }
+});
+
+test('el ZIP de vistas previas conserva resolución, tipo y selección sin pedir originales', async () => {
+  const anterior = globalThis.fetch;
+  const miniatura = await sharp(fotoJpeg).resize(320, 240, { fit: 'fill' }).jpeg().toBuffer();
+  const pedidos = [];
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname === 'drive.google.com' && url.pathname === '/thumbnail') {
+      pedidos.push(url.searchParams.get('id'));
+      assert.equal(url.searchParams.get('resourcekey'), 'clave-foto');
+      return new Response(miniatura, { headers: { 'content-type': 'image/jpeg' } });
+    }
+    assert.notEqual(url.hostname, 'drive.usercontent.google.com');
+    assert.notEqual(url.pathname, '/uc');
+    return anterior(input, init);
+  };
+  try {
+    const descargar = (token) => DRIVE(new Request('https://panel.test/api/admin/drive?foto=foto-1&vista=1&clave=clave-foto', { headers: token ? { Authorization: `Bearer ${token}` } : {} }));
+    assert.equal((await descargar()).status, 401);
+    assert.deepEqual(pedidos, []);
+    const { crearZipFotos } = await import('../lib/zip-fotos.ts');
+    const zip = await crearZipFotos([{ id: 'foto-1', name: 'Fachada.PNG' }], async () => {
+      const respuesta = await descargar(seller);
+      assert.equal(respuesta.status, 200);
+      return respuesta.blob();
+    }, () => {}, true);
+    const archivos = unzipSync(new Uint8Array(await zip.arrayBuffer()));
+    assert.deepEqual(Object.keys(archivos), ['01 - Fachada - vista previa.jpg']);
+    const bytes = Buffer.from(Object.values(archivos)[0]);
+    assert.deepEqual(bytes, miniatura);
+    const metadata = await sharp(bytes).metadata();
+    assert.equal(metadata.width, 320);
+    assert.equal(metadata.height, 240);
+    assert.deepEqual(pedidos, ['foto-1']);
+  } finally { globalThis.fetch = anterior; }
+});
+
+
+test('el ZIP usa la dirección privada como nombre local con un respaldo seguro', async () => {
+  const { nombreZipPropiedad } = await import('../lib/zip-fotos.ts');
+  const direccion = '3352 W Aire Libre Ave, Phoenix, AZ 85053';
+  assert.equal(nombreZipPropiedad(direccion, true), `${direccion}.zip`);
+  assert.equal(nombreZipPropiedad(direccion), `${direccion}.zip`);
+  assert.equal(nombreZipPropiedad('Peoria, AZ 85345'), 'Peoria, AZ 85345.zip');
+  assert.equal(nombreZipPropiedad(undefined, true), 'vistas-previas-facebook.zip');
+  assert.equal(nombreZipPropiedad(''), 'fotos-originales.zip');
+  assert.doesNotMatch(nombreZipPropiedad('../Casa/privada'), /[\\/]/);
+  assert.equal(nombreZipPropiedad('Casa.zip'), 'Casa.zip');
 });

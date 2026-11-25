@@ -139,3 +139,18 @@ export async function descargarImagenPortada(foto: FotoDrive) {
     return imagenPublica(miniatura, AbortSignal.timeout(10000));
   }
 }
+
+// Copia de la vista pública. No solicita originales ni eleva la resolución disponible.
+export async function descargarVistaDrive(id: string, key?: string) {
+  if (!identificadorDrive(id) || (key !== undefined && !identificadorDrive(key))) throw new ErrorDrive('Identificador de foto inválido', 400);
+  const url = new URL('https://drive.google.com/thumbnail');
+  url.search = new URLSearchParams({ id, sz: 'w1600' }).toString();
+  if (key) url.searchParams.set('resourcekey', key);
+  try { return await imagenPublica(url, AbortSignal.timeout(20000)); }
+  catch (error) {
+    if (!(error instanceof ErrorDrive) || error.status === 413 || error.status === 403) throw error;
+    const alternativa = new URL(`https://lh3.googleusercontent.com/d/${encodeURIComponent(id)}=w1600`);
+    if (key) alternativa.searchParams.set('resourcekey', key);
+    return imagenPublica(alternativa, AbortSignal.timeout(20000));
+  }
+}

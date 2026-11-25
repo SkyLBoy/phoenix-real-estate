@@ -1,8 +1,9 @@
 'use client';
 
-import { ciudadesPhoenix } from '@/lib/ciudades-phoenix';
+import { SelectorCiudad } from './selector-ciudad';
+
 import { VendeTuCasa } from './vende-tu-casa';
-import { PortadaPublica } from './portada-publica';
+import { GaleriaPublica } from './galeria-publica';
 import { importeUsd, diferenciaArv } from './metricas-propiedad';
 import { useState } from 'react';
 import Link from 'next/link';
@@ -92,21 +93,23 @@ export default function CatalogoPublico() {
             <p>Explora propiedades para vivir o invertir y coordina una consulta por WhatsApp.</p>
           </div>
           <div className="hero-tools">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-sm font-semibold">Ciudad
-                <select className="vip-input" value={filtroCiudad} onChange={(e) => catalogo.cambiarFiltros(e.target.value, filtroZip)}>
-                  <option value="">Todas las ciudades</option>
-                  {ciudadesPhoenix.map((ciudad) => <option key={ciudad} value={ciudad}>{ciudad}</option>)}
-                </select>
-              </label>
+            <p className="text-sm font-semibold">Encuentra tu próxima propiedad</p>
+            <div className="grid items-start gap-3 sm:grid-cols-2">
+              <SelectorCiudad label="Ciudad" ariaLabel="Ciudad" placeholder="Todas las ciudades"
+                value={filtroCiudad} onChange={(ciudad) => catalogo.cambiarFiltros(ciudad, filtroZip)} />
               <label className="grid gap-1 text-sm font-semibold">ZIP
-                <input className="vip-input" type="text" inputMode="numeric" maxLength={5}
+                <input className="vip-input h-[2.9rem]" type="text" inputMode="numeric" maxLength={5}
                   placeholder="Código postal" value={filtroZip}
                   onChange={(e) => catalogo.cambiarFiltros(filtroCiudad, e.target.value.replace(/\D/g, '').slice(0, 5))} />
               </label>
             </div>
             {(filtroCiudad || filtroZip) && <button className="public-action mt-3" type="button" onClick={limpiarFiltros}>Limpiar filtros</button>}
           </div>
+          {estadoCarga === 'listo' && <dl className="hero-resumen" aria-label="Resumen del catálogo">
+            <div><dt>{filtroCiudad || filtroZip ? 'Propiedades con estos filtros' : 'Propiedades disponibles'}</dt><dd>{total}</dd></div>
+            <div><dt>Precio desde{filtroCiudad || filtroZip ? ' con estos filtros' : ''}</dt><dd>{catalogo.precioDesde != null ? <>{importeUsd(catalogo.precioDesde)} <small>USD</small></> : '—'}</dd></div>
+          </dl>}
+
 
         </div>
       </section>
@@ -141,8 +144,8 @@ export default function CatalogoPublico() {
                   className="property-card flex flex-col justify-between"
                 >
                   <div>
-                    <div className="listing-photo relative">
-                      <PortadaPublica src={portada} zona={prop.ciudad_zona} />
+                    <div className="relative">
+                      <GaleriaPublica propiedad={prop.id} portada={portada} zona={prop.ciudad_zona} />
                       <span className={`status-pill absolute top-3 right-3 ${porConfirmar ? 'status-pending' : ''}`}>
                         {porConfirmar ? 'Por confirmar' : 'Disponible'}
                       </span>

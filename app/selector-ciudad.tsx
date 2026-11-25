@@ -3,7 +3,7 @@
 import { useId, useState } from 'react';
 import { ciudadesPhoenix } from '@/lib/ciudades-phoenix';
 
-export function SelectorCiudad({ value, onChange }: { value: string; onChange: (ciudad: string) => void }) {
+export function SelectorCiudad({ value, onChange, label = 'Ciudad pública', ariaLabel = 'Zona pública', placeholder = 'Busca Phoenix, Peoria, Tempe…' }: { value: string; onChange: (ciudad: string) => void; label?: string; ariaLabel?: string; placeholder?: string }) {
   const id = useId();
   const [abierto, setAbierto] = useState(false);
   const [consulta, setConsulta] = useState('');
@@ -14,11 +14,12 @@ export function SelectorCiudad({ value, onChange }: { value: string; onChange: (
   return <div className="min-w-0 space-y-1 text-sm" onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) { setAbierto(false); setConsulta(''); }
   }}>
-    <label htmlFor={id} className="block">Ciudad pública</label>
-    <input id={id} role="combobox" aria-label="Zona pública" aria-autocomplete="list" aria-expanded={abierto}
+    <label htmlFor={id} className="block">{label}</label>
+    <div className="relative">
+    <input id={id} role="combobox" aria-label={ariaLabel} aria-autocomplete="list" aria-expanded={abierto}
       aria-controls={`${id}-opciones`} aria-activedescendant={abierto && opciones[activo] ? `${id}-${activo}` : undefined}
       className="vip-input min-h-11 w-full" autoComplete="off" value={abierto ? consulta : value}
-      placeholder={value || 'Busca Phoenix, Peoria, Tempe…'}
+      placeholder={value || placeholder}
       onFocus={() => { setAbierto(true); setConsulta(''); setActivo(0); }}
       onClick={() => { if (!abierto) { setAbierto(true); setConsulta(''); setActivo(0); } }}
       onChange={(event) => { setConsulta(event.target.value); setActivo(0); setAbierto(true); }}
@@ -32,7 +33,7 @@ export function SelectorCiudad({ value, onChange }: { value: string; onChange: (
           document.getElementById(`${id}-${siguiente}`)?.scrollIntoView({ block: 'nearest' });
         }
       }} />
-    {abierto && <div className="rounded-xl border border-[#dfd3c4] bg-[#fffdf8] p-1 shadow-sm">
+    {abierto && <div className="absolute inset-x-0 top-full z-40 mt-1 rounded-xl border border-[#dfd3c4] bg-[#fffdf8] p-1 shadow-xl">
       <div id={`${id}-opciones`} role="listbox" aria-label="Ciudades del área de Phoenix"
         className="max-h-[min(240px,35dvh)] overflow-y-auto overscroll-contain">
         {opciones.map((ciudad, indice) => <button key={ciudad} id={`${id}-${indice}`} type="button" role="option"
@@ -42,6 +43,7 @@ export function SelectorCiudad({ value, onChange }: { value: string; onChange: (
       </div>
       {!opciones.length && <p role="status" className="p-3">No hay coincidencias. Prueba otro nombre.</p>}
     </div>}
+    </div>
     {value && <button type="button" className="min-h-11 px-1 text-xs underline" onClick={() => elegir('')}>Quitar ciudad</button>}
   </div>;
 }

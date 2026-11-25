@@ -2,7 +2,7 @@
 
 import { separarUbicacion, unirUbicacion } from '@/lib/ciudades-phoenix';
 
-import { SelectorCiudad } from './selector-ciudad';
+import { SelectorCiudad } from '../selector-ciudad';
 import { FichaInventario } from './ficha-inventario';
 import { type MaterialRevisado } from './revision-material';
 import { useCallback, useEffect, useState } from 'react';
@@ -76,8 +76,8 @@ export function Inventario({
     if (foto.resourceKey) params.set('clave', foto.resourceKey);
     return (await respuestaPrivada(userId, `/api/admin/drive?${params}`, { signal })).blob();
   }, [userId]);
-  const abrirOriginal = async (foto: FotoDrive) => {
-    const params = new URLSearchParams({ foto: foto.id, original: '1' });
+  const abrirOriginal = async (foto: FotoDrive, modo: 'original' | 'vista' = 'original') => {
+    const params = new URLSearchParams({ foto: foto.id, [modo === 'vista' ? 'vista' : 'original']: '1' });
     if (foto.resourceKey) params.set('clave', foto.resourceKey);
     return (await respuestaPrivada(userId, `/api/admin/drive?${params}`)).blob();
   };
@@ -554,6 +554,7 @@ export function Inventario({
             <SelectorFotosDrive
               key={`${editando ?? 'nueva'}:${driveUrl.trim()}`}
               carpeta={driveUrl.trim()}
+              nombrePropiedad={direccionPrivada.trim() || ciudadZona}
               seleccionadas={fotosDrive}
               portada={portadaDrive}
               alSeleccionar={(fotos) => {

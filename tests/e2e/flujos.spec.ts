@@ -2,6 +2,10 @@ import { expect, test } from '@playwright/test';
 
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/propiedades/*/fotos', (ruta) => ruta.fulfill({ json: { fotos: [] } }));
+});
+
 test('la captación conserva el formulario tras un límite y permite reintentar', async ({ page }) => {
   await page.route('**/api/catalogo**', (ruta) => ruta.fulfill({ json: { propiedades:[],total:0,pagina:0,porPagina:12 } }));
   let intentos = 0;
@@ -78,7 +82,8 @@ test('el catálogo pagina, combina filtros y actualiza los resultados al recuper
   await expect(page.getByText('25 resultados')).toBeVisible();
   await page.getByRole('button',{ name:'Siguiente',exact:true }).click();
   await expect(page.getByText('Página 2 de 3')).toBeVisible();
-  await page.getByRole('combobox',{ name:'Ciudad',exact:true }).selectOption('Mesa');
+  await page.getByRole('combobox',{ name:'Ciudad',exact:true }).fill('Mesa');
+  await page.getByRole('option', { name: 'Mesa', exact: true }).click();
   await page.getByRole('textbox',{ name:'ZIP',exact:true }).fill('852');
   await expect(page.locator('.property-card')).toHaveCount(5);
   await expect.poll(() => consultas.at(-1)?.searchParams.get('zip')).toBe('852');

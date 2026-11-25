@@ -12,7 +12,7 @@ import { RevisionMaterial, type MaterialRevisado } from './revision-material';
 import { CorregirPrecio } from './corregir-precio';
 import { CopiarEnlaceFicha } from './aviso-whatsapp';
 import { TextosDeFicha } from './textos-ficha';
-import { DescargarFotoDrive, DescargarSeleccionDrive } from './fotos-drive';
+import { type DescargarFotosDrive, DescargarFotoDrive, DescargarSeleccionDrive } from './fotos-drive';
 
 type Props = {
   prop: Propiedad; userId: string; ahora: number | null; editando: string | null;
@@ -24,7 +24,7 @@ type Props = {
   publicar: (prop: Propiedad, material: MaterialRevisado) => Promise<void>;
   actualizarFicha: (id: string, cambios: Partial<Propiedad>, actualizarAviso?: boolean) => void;
   abrirFoto: (foto: FotoDrive, signal?: AbortSignal) => Promise<Blob>;
-  abrirOriginal: (foto: FotoDrive) => Promise<Blob>;
+  abrirOriginal: DescargarFotosDrive;
 };
 
 export function FichaInventario({ prop,userId,ahora,editando,revisandoFicha,actualizando,publicando,
@@ -135,7 +135,7 @@ export function FichaInventario({ prop,userId,ahora,editando,revisandoFicha,actu
                 {Boolean(prop.fotos_drive?.length) && (
                   <details className="space-y-2 text-sm">
                     <summary className="cursor-pointer text-amber-300">Fotos elegidas para Facebook ({prop.fotos_drive.length})</summary>
-                    <DescargarSeleccionDrive fotos={prop.fotos_drive} abrirOriginal={abrirOriginal} />
+                    <DescargarSeleccionDrive fotos={prop.fotos_drive} abrirOriginal={abrirOriginal} nombrePropiedad={prop.direccion_privada || prop.ciudad_zona || undefined} />
                     <ul className="space-y-2">
                       {prop.fotos_drive.map((foto) => (
                         <li key={foto.id} className="flex flex-wrap items-center gap-3">

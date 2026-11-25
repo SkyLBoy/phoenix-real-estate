@@ -9,18 +9,19 @@ const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
 
 // Ejecuta los handlers y el estado de los componentes sin red ni DOM.
-function pantalla(archivo, nombre, props, inventario = false) {
+function pantalla(archivo, nombre, props, inventario = false, precargados = []) {
   const estados = [];
   let indice = 0;
   const react = {
     useState(inicial) {
       const posicion = indice++;
-      if (!(posicion in estados)) estados[posicion] = inventario && posicion === 1
+      if (!(posicion in estados)) estados[posicion] = posicion in precargados ? precargados[posicion] : inventario && posicion === 1
         ? [] : typeof inicial === 'function' ? inicial() : inicial;
       return [estados[posicion], (valor) => {
         estados[posicion] = typeof valor === 'function' ? valor(estados[posicion]) : valor;
       }];
     },
+    useRef: () => ({ current: null }),
     useId: () => "vista-fotos-prueba",
     useCallback: (fn) => fn,
     useEffect() {},
@@ -127,7 +128,7 @@ test('cada tarjeta del selector muestra una vista con recuperación de miniatura
 
 test('el selector integrado filtra sin modificar la ciudad y confirma con Enter', () => {
   const elegidas = [];
-  const render = pantalla('app/admin/selector-ciudad.tsx', 'SelectorCiudad', { value: 'Peoria', onChange: (ciudad) => elegidas.push(ciudad) });
+  const render = pantalla('app/selector-ciudad.tsx', 'SelectorCiudad', { value: 'Peoria', onChange: (ciudad) => elegidas.push(ciudad) });
   const input = () => nodos(render()).find((n) => n.props?.role === 'combobox');
   assert.equal(input().props.value, 'Peoria');
   input().props.onFocus();
@@ -145,4 +146,25 @@ test('el selector integrado filtra sin modificar la ciudad y confirma con Enter'
   input().props.onKeyDown({ key: 'Escape', preventDefault() {} });
   assert.equal(input().props.value, 'Peoria');
   assert.deepEqual(elegidas, ['Tempe']);
+});
+
+
+test('el carrusel avanza, retrocede y permite deslizar sin abrir otras páginas', () => {
+  const fotos = ['/foto/1','/foto/2','/foto/3'];
+  const render = pantalla('app/galeria-publica.tsx', 'GaleriaPublica', { propiedad: 'casa-1', zona: 'Peoria', detalle: true }, false, [fotos]);
+  const boton = (nombre) => nodos(render()).find((n) => n.type === 'button' && n.props['aria-label'] === nombre);
+  const foto = () => nodos(render()).find((n) => n.props?.descripcion)?.props.src;
+  assert.equal(foto(), '/foto/1');
+  boton('Foto siguiente').props.onClick();
+  assert.equal(foto(), '/foto/2');
+  boton('Foto anterior').props.onClick();
+  assert.equal(foto(), '/foto/1');
+  boton('Foto anterior').props.onClick();
+  assert.equal(foto(), '/foto/3');
+  boton('Ver foto 2').props.onClick();
+  assert.equal(foto(), '/foto/2');
+  const tactil = nodos(render()).find((n) => n.props?.onTouchStart);
+  tactil.props.onTouchStart({ touches: [{ clientX: 220, clientY: 100 }] });
+  tactil.props.onTouchEnd({ changedTouches: [{ clientX: 100, clientY: 105 }] });
+  assert.equal(foto(), '/foto/3');
 });
