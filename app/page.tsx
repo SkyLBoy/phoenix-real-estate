@@ -90,7 +90,11 @@ export default function CatalogoPublico() {
         <div className="public-wrap hero-layout">
           <div className="hero-intro">
             <h1 className="catalog-title">Casas en el área de Phoenix</h1>
-            <p>Explora propiedades para vivir o invertir y coordina una consulta por WhatsApp.</p>
+            <p>
+              <strong className="mb-2 block text-xl leading-snug text-[var(--navy)] md:text-2xl">¡Oportunidades únicas en casas de subasta!</strong>
+              ¡Precios que no encontrarás en el mercado! Invierte, remodela y gana con tu próximo proyecto de <strong>FIX &amp; FLIP</strong>.
+            </p>
+            <p>¡Yo te asesoro en cada paso del proceso! <strong className="text-[var(--navy)]">Propiedades off-market.</strong></p>
           </div>
           <div className="hero-tools">
             <p className="text-sm font-semibold">Encuentra tu próxima propiedad</p>
