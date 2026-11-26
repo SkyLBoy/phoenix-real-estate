@@ -177,7 +177,8 @@ body {
 .admin-shell:has(#aviso-admin:target) .admin-nav a[href="#aviso-admin"],
 .admin-shell:has(#vip-admin:target) .admin-nav a[href="#vip-admin"],
 .admin-shell:has(#casas-ofrecidas-admin:target) .admin-nav a[href="#casas-ofrecidas-admin"] { background: var(--navy); color: white; }
-#inventario-publico, #lista-vip { scroll-margin-top: 1rem; }
+#inventario-publico { scroll-margin-top: 1rem; }
+#lista-vip, #vende-tu-casa { scroll-margin-top: clamp(1.25rem, 3vw, 2rem); }
 
 .brand-header-layout {
   display: flex;
