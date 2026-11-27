@@ -18,7 +18,7 @@ export const condicionesTexto = {
   habitable: 'Casa habitable',
   paraFlippers: 'Orientada a proyectos Fix & Flip',
   asesoria: 'Ofrece acompañamiento durante el proceso',
-  incluirArv: 'Incluir ARV confirmado',
+  incluirArv: 'Incluir Precio del Mercado confirmado',
 } as const;
 export const clavesCondiciones = Object.keys(condicionesTexto) as (keyof typeof condicionesTexto)[];
 

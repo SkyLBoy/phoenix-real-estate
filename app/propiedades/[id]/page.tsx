@@ -4,10 +4,13 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { ArrowLeft, MessageCircle, TrendingUp } from 'lucide-react';
-import { Suspense } from 'react';
+import { cache, Suspense } from 'react';
+import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { importeUsd, diferenciaArv } from '@/app/metricas-propiedad';
 import { CAMPOS_PUBLICOS, enlacePortada, enlaceWhatsApp, type PropiedadPublica } from '@/lib/propiedades-publicas';
 import { cargarSimilares } from '@/lib/propiedades-similares';
+import { horaDeSolicitud } from '@/lib/hora-de-solicitud';
 import { EtiquetaDisponibilidad } from './etiqueta-disponibilidad';
 import { supabase } from '@/lib/supabase';
 
@@ -34,15 +37,39 @@ async function CasasSimilares({ referencia }: { referencia: PropiedadPublica }) 
   );
 }
 
-async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
-  const { id } = await params;
-  const { data: prop, error } = await supabase
+const cargarFichaPublica = cache(async (id: string) => {
+  const { data, error } = await supabase
     .from('propiedades_publicas')
     .select(CAMPOS_PUBLICOS)
     .eq('id', id)
     .maybeSingle();
-
   if (error && error.code !== '22P02') throw new Error('No se pudo cargar la ficha');
+  return data;
+});
+
+export async function generateMetadata({ params }: PageProps<'/propiedades/[id]'>): Promise<Metadata> {
+  const { id } = await params;
+  const prop = await cargarFichaPublica(id).catch(() => null);
+  if (!prop) return {};
+  const title = `${prop.ciudad_zona} · ${importeUsd(prop.precio)} USD`;
+  const description = prop.estado === 'disponible'
+    ? 'Consulta las fotos y los detalles de esta propiedad.'
+    : 'Consulta el estado de esta ficha y encuentra otras propiedades en la zona.';
+  const portada = prop.estado === 'disponible' ? enlacePortada(prop) : null;
+  let imagen = portada;
+  if (portada?.startsWith('/')) {
+    const cabeceras = await headers();
+    const host = cabeceras.get('host');
+    const protocolo = cabeceras.get('x-forwarded-proto') === 'http' ? 'http' : 'https';
+    imagen = host ? new URL(portada, `${protocolo}://${host}`).href : null;
+  }
+  return { title, description, openGraph: { title, description, ...(imagen && { images: [imagen] }) } };
+}
+
+async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
+  await connection();
+  const { id } = await params;
+  const prop = await cargarFichaPublica(id);
   if (!prop) notFound();
   const diferencia = diferenciaArv(prop.precio, prop.arv);
   const contacto = enlaceWhatsApp(prop);
@@ -63,7 +90,7 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
         </Link>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <h1 className="editorial-title text-4xl md:text-6xl">{prop.ciudad_zona}</h1>
-          <EtiquetaDisponibilidad estado={prop.estado} ultimaConfirmacion={prop.ultima_confirmacion} />
+          <EtiquetaDisponibilidad estado={prop.estado} ultimaConfirmacion={prop.ultima_confirmacion} ahoraInicial={horaDeSolicitud()} />
         </div>
         {prop.estado !== 'disponible' ? (
           <>
@@ -84,16 +111,16 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
           </>
         ) : (
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.68fr)_minmax(0,1fr)]">
-<div className="space-y-5">
+            <div className="space-y-5">
               <GaleriaPublica propiedad={prop.id} portada={enlacePortada(prop)} zona={prop.ciudad_zona} detalle />
             </div>
             <div className="public-panel space-y-5 p-5 md:p-7">
               <div>
                 <p className="text-sm font-medium text-[var(--muted)]">Precio de venta</p>
                 <p className="listing-price mt-1">{importeUsd(prop.precio)} <span className="text-xs tracking-normal text-[var(--muted)]">USD</span></p>
-                {prop.arv != null && <p className="listing-arv mt-2 font-semibold">ARV estimado: {importeUsd(prop.arv)} USD</p>}
+                {prop.arv != null && <p className="listing-arv mt-2 font-semibold">Precio del Mercado: {importeUsd(prop.arv)} USD</p>}
               </div>
-              {diferencia !== null && <p className="arv-badge"><TrendingUp size={16} aria-hidden="true" /> {importeUsd(diferencia)} por debajo del ARV</p>}
+              {diferencia !== null && <p className="arv-badge"><TrendingUp size={16} aria-hidden="true" /> {importeUsd(diferencia)} por debajo del Precio del Mercado</p>}
               <ul className="flex flex-wrap gap-x-4 gap-y-2 border-y border-[var(--line)] py-4 text-sm text-[var(--muted)]">
                 {prop.beds != null && <li>{prop.beds} recámaras</li>}
                 {prop.baths != null && <li>{prop.baths} baños</li>}
@@ -116,5 +143,5 @@ async function Ficha({ params }: PageProps<'/propiedades/[id]'>) {
 }
 
 export default function Propiedad(props: PageProps<'/propiedades/[id]'>) {
-  return <Suspense fallback={<p role="status">Cargando ficha…</p>}><Ficha {...props} /></Suspense>;
+  return <Suspense fallback={<main className="public-shell"><p role="status" className="public-wrap py-12">Cargando ficha…</p></main>}><Ficha {...props} /></Suspense>;
 }

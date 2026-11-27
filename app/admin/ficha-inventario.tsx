@@ -43,22 +43,22 @@ export function FichaInventario({ prop,userId,ahora,editando,revisandoFicha,actu
             const rutaFicha = `/propiedades/${encodeURIComponent(prop.id)}`;
   return (
               <div
-                                className="inventario-ficha space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5"
+                                className="inventario-ficha space-y-4 rounded-2xl border border-[var(--admin-soft)] bg-[var(--admin-surface)] p-4 sm:p-5"
               >
-                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-800 pb-3">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--admin-soft)] pb-3">
                   <div>
-                    <span className="text-sm font-semibold text-amber-400">
+                    <span className="text-sm font-semibold text-[var(--admin-accent)]">
                       {prop.ciudad_zona}
                     </span>
-                    <h3 className="text-lg font-bold text-zinc-100">
+                    <h3 className="text-lg font-bold text-[var(--admin-ink)]">
                       {prop.direccion_privada || 'Ficha sin dirección'}{' '}
-                      <span className="text-xs font-normal text-zinc-500">
+                      <span className="text-xs font-normal text-[var(--admin-muted)]">
                         (Solo visible aquí)
                       </span>
                     </h3>
-                    <p className="text-sm text-zinc-300">
+                    <p className="text-sm text-[var(--admin-body)]">
                       Precio: <strong className="text-lg tabular-nums tracking-tight">{prop.precio == null ? 'Pendiente' : `$${Number(prop.precio).toLocaleString()}`}</strong>
-                      {prop.arv && ` · ARV: $${Number(prop.arv).toLocaleString()}`}
+                      {prop.arv && ` · Precio del Mercado: $${Number(prop.arv).toLocaleString()}`}
                       {prop.beds && ` · ${prop.beds} bd`}
                       {prop.baths && ` / ${prop.baths} ba`}
                       {prop.sqft && ` · ${prop.sqft} sqft`}
@@ -68,7 +68,7 @@ export function FichaInventario({ prop,userId,ahora,editando,revisandoFicha,actu
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => eliminarPropiedad(prop.id)}
-                      className="min-w-11 p-2 text-zinc-500 hover:text-red-400 cursor-pointer"
+                      className="min-w-11 p-2 text-[var(--admin-muted)] hover:text-[var(--admin-danger-hover)] cursor-pointer"
                       aria-label="Eliminar propiedad"
                       title="Eliminar"
                     >
@@ -79,7 +79,7 @@ export function FichaInventario({ prop,userId,ahora,editando,revisandoFicha,actu
 
                 {prop.publicada_en ? (
                   <div className="space-y-3 text-sm">
-                    <Link href={rutaFicha} className="text-amber-300">
+                    <Link href={rutaFicha} className="text-[var(--admin-link)]">
                       Publicada · Ver ficha
                     </Link>
                     <CopiarEnlaceFicha ruta={rutaFicha} />
@@ -101,10 +101,10 @@ export function FichaInventario({ prop,userId,ahora,editando,revisandoFicha,actu
                       {actualizando ? 'Actualizando disponibilidad…' : etiqueta}
                     </p>
                     {etiqueta === 'Por confirmar' && (
-                      <p className="text-zinc-400">Verifica que la propiedad siga disponible.</p>
+                      <p className="text-[var(--admin-secondary)]">Verifica que la propiedad siga disponible.</p>
                     )}
                     <div role="group" aria-label="Actualizar disponibilidad"
-                      className="flex flex-wrap gap-2 [&>button]:min-h-11 [&>button]:rounded-lg [&>button]:bg-zinc-800 [&>button]:px-3 [&>button:disabled]:opacity-50">
+                      className="flex flex-wrap gap-2 [&>button]:min-h-11 [&>button]:rounded-lg [&>button]:bg-[var(--admin-soft)] [&>button]:px-3 [&>button:disabled]:opacity-50">
                       <button type="button" disabled={actualizando} onClick={() => cambiarEstado(prop.id, 'disponible')}>
                         {prop.estado === 'disponible' ? 'Confirmar disponible' : 'Volver a disponible'}
                       </button>
@@ -134,7 +134,7 @@ export function FichaInventario({ prop,userId,ahora,editando,revisandoFicha,actu
 
                 {Boolean(prop.fotos_drive?.length) && (
                   <details className="space-y-2 text-sm">
-                    <summary className="cursor-pointer text-amber-300">Fotos elegidas para Facebook ({prop.fotos_drive.length})</summary>
+                    <summary className="cursor-pointer text-[var(--admin-link)]">Fotos elegidas para Facebook ({prop.fotos_drive.length})</summary>
                     <DescargarSeleccionDrive fotos={prop.fotos_drive} abrirOriginal={abrirOriginal} nombrePropiedad={prop.direccion_privada || prop.ciudad_zona || undefined} />
                     <ul className="space-y-2">
                       {prop.fotos_drive.map((foto) => (

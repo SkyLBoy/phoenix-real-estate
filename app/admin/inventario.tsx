@@ -1,24 +1,19 @@
 'use client';
 
-import { separarUbicacion, unirUbicacion } from '@/lib/ciudades-phoenix';
-
 import { LogoMarca } from '../logo-marca';
-import { SelectorCiudad } from '../selector-ciudad';
 import { FichaInventario } from './ficha-inventario';
 import { type MaterialRevisado } from './revision-material';
 import { useCallback, useEffect, useState } from 'react';
-import { respuestaPrivada, solicitar } from '@/lib/api-admin';
-import type { FotoDrivePanel as FotoDrive } from '@/lib/fotos-drive';
+import { solicitar } from '@/lib/api-admin';
 import { type EstadoDisponibilidad } from '@/lib/disponibilidad';
 import { ColaDisponibilidad, type PaginaPendientes } from './cola-disponibilidad';
 import { useRelojDisponibilidad } from '@/lib/use-reloj-disponibilidad';
 import { CasasOfrecidas } from './casas-ofrecidas';
 import { CompradoresVip } from './compradores-vip';
 import { AvisoWhatsApp } from './aviso-whatsapp';
-import { SelectorFotosDrive } from './fotos-drive';
-import { camposPegables, leerDatosPegados, type CampoPegable } from './datos-pegados';
+import { FormularioFicha } from './formulario-ficha';
+import { useDrivePanel } from './use-drive-panel';
 import {
-  Sparkles,
   ExternalLink,
   Building2,
 } from 'lucide-react';
@@ -41,112 +36,13 @@ export function Inventario({
   const [propiedades, setPropiedades] = useState<Propiedad[] | null>(null);
   const [accesoDenegado, setAccesoDenegado] = useState(false);
   const [errorOperacion, setErrorOperacion] = useState('');
-  const [generando, setGenerando] = useState(false);
-
-  // Campos del formulario
-  const [direccionPrivada, setDireccionPrivada] = useState('');
-  const [ciudadZona, setZonaOriginal] = useState('');
-  const [ciudad, setCiudad] = useState('');
-  const [zip, setZip] = useState('');
-  const setCiudadZona = (zona: string) => {
-    const ubicacion = separarUbicacion(zona);
-    setZonaOriginal(zona);
-    setCiudad(ubicacion.ciudad);
-    setZip(ubicacion.zip);
+  const [formulario, setFormulario] = useState<{ revision: number; borrador?: Propiedad }>({ revision: 0 });
+  const cargarFormulario = (borrador?: Propiedad) => {
+    setFormulario(({ revision }) => ({ revision: revision + 1, borrador }));
   };
-  const [precio, setPrecio] = useState('');
-  const [arv, setArv] = useState('');
-  const [beds, setBeds] = useState('');
-  const [baths, setBaths] = useState('');
-  const [sqft, setSqft] = useState('');
-  const [lotSize, setLotSize] = useState('');
-  const [yearBuilt, setYearBuilt] = useState('');
-  const [driveUrl, setDriveUrl] = useState('');
-  const [imagenPortada, setImagenPortada] = useState('');
-  const [fotosDrive, setFotosDrive] = useState<FotoDrive[]>([]);
-  const [portadaDrive, setPortadaDrive] = useState<string | null>(null);
-
-  const listarFotos = async (carpeta: string) => {
-    const params = new URLSearchParams({ carpeta });
-    const { fotos } = await solicitar<{ fotos: FotoDrive[] }>(userId, `/api/admin/drive?${params}`);
-    return fotos;
-  };
-
-  const abrirFoto = useCallback(async (foto: FotoDrive, signal?: AbortSignal) => {
-    const params = new URLSearchParams({ foto: foto.id });
-    if (foto.resourceKey) params.set('clave', foto.resourceKey);
-    return (await respuestaPrivada(userId, `/api/admin/drive?${params}`, { signal })).blob();
-  }, [userId]);
-  const abrirOriginal = async (foto: FotoDrive, modo: 'original' | 'vista' = 'original') => {
-    const params = new URLSearchParams({ foto: foto.id, [modo === 'vista' ? 'vista' : 'original']: '1' });
-    if (foto.resourceKey) params.set('clave', foto.resourceKey);
-    return (await respuestaPrivada(userId, `/api/admin/drive?${params}`)).blob();
-  };
-  const [notasExtra, setNotasExtra] = useState('');
-  const [versionEdicion, setVersionEdicion] = useState(0);
-  const [editando, setEditando] = useState<string | null>(null);
   const [revisando, setRevisando] = useState<string | null>(null);
   const [publicando, setPublicando] = useState(false);
-  const [bloqueDatos, setBloqueDatos] = useState('');
-  const [resultadoPegado, setResultadoPegado] = useState<{
-    reconocidos: CampoPegable[];
-    conservados: CampoPegable[];
-    revisar: CampoPegable[];
-    arvConMas: boolean;
-    advertencias: string[];
-  } | null>(null);
-
-  const camposFormulario = {
-    direccionPrivada: [direccionPrivada, setDireccionPrivada],
-    ciudadZona: [ciudadZona, setCiudadZona],
-    precio: [precio, setPrecio],
-    arv: [arv, setArv],
-    beds: [beds, setBeds],
-    baths: [baths, setBaths],
-    sqft: [sqft, setSqft],
-    lotSize: [lotSize, setLotSize],
-    yearBuilt: [yearBuilt, setYearBuilt],
-  } as const;
-  const camposFaltantes = (Object.keys(camposFormulario) as CampoPegable[])
-    .filter((campo) => !camposFormulario[campo][0].trim());
-
-  const aplicarDatosPegados = () => {
-    const { valores, revisar, arvConMas, driveUrl: enlace, notasExtra: notas, advertencias } = leerDatosPegados(bloqueDatos);
-    const reconocidos = Object.keys(valores) as CampoPegable[];
-    const conservados: CampoPegable[] = [];
-    for (const campo of reconocidos) {
-      const [actual, actualizar] = camposFormulario[campo];
-      const valor = valores[campo]!;
-      if (!actual.trim()) actualizar(valor);
-      else if (actual !== valor) conservados.push(campo);
-    }
-    if (enlace && !driveUrl.trim()) setDriveUrl(enlace);
-    else if (enlace && enlace !== driveUrl) advertencias.push('Se conservó la carpeta de Drive que ya estaba en el formulario.');
-    if (notas && !notasExtra.trim()) setNotasExtra(notas);
-    else if (notas && notas !== notasExtra) advertencias.push('Se conservaron las notas que ya estaban en el formulario. Revisa el mensaje original.');
-    setResultadoPegado({ reconocidos, conservados, revisar, arvConMas, advertencias });
-  };
-
-  const cargarFormulario = (prop?: Propiedad) => {
-    setEditando(prop?.id ?? null);
-    setVersionEdicion(prop?.ficha_version ?? 0);
-    setBloqueDatos('');
-    setResultadoPegado(null);
-    setDireccionPrivada(prop?.direccion_privada ?? '');
-    setCiudadZona(prop?.ciudad_zona ?? '');
-    setPrecio(String(prop?.precio ?? ''));
-    setArv(String(prop?.arv ?? ''));
-    setBeds(String(prop?.beds ?? ''));
-    setBaths(String(prop?.baths ?? ''));
-    setSqft(String(prop?.sqft ?? ''));
-    setLotSize(prop?.lot_size ?? '');
-    setYearBuilt(String(prop?.year_built ?? ''));
-    setDriveUrl(prop?.drive_url ?? '');
-    setImagenPortada(prop?.imagen_portada ?? '');
-    setFotosDrive(prop?.fotos_drive ?? []);
-    setPortadaDrive(prop?.portada_drive_id ?? null);
-    setNotasExtra(prop?.notas_extra ?? '');
-  };
+  const drive = useDrivePanel(userId);
 
   const mostrarError = useCallback((error: unknown, mensaje: string) => {
     if (error instanceof Error && (error.cause === 401 || error.cause === 403)) {
@@ -183,45 +79,6 @@ export function Inventario({
       });
     return () => controller.abort();
   }, [intentoCarga, mostrarError, userId, paginaInventario]);
-
-  const procesarPropiedad = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setGenerando(true);
-    setErrorOperacion('');
-
-    try {
-      const ficha = {
-        direccion_privada: direccionPrivada,
-        ciudad_zona: ciudadZona,
-        precio,
-        arv,
-        beds,
-        baths,
-        sqft,
-        lot_size: lotSize,
-        year_built: yearBuilt,
-        drive_url: driveUrl,
-        imagen_portada: imagenPortada,
-        fotos_drive_ids: fotosDrive.map(({ id }) => id),
-        portada_drive_id: portadaDrive,
-        notas_extra: notasExtra,
-      };
-      await solicitar(userId, editando ? '/api/admin/propiedades' : '/api/procesar-propiedad', {
-        method: editando ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editando
-          ? { id: editando, ficha_version: versionEdicion, accion: 'guardar_borrador', ficha }
-          : { ...ficha, generar_anuncios: false }),
-      });
-      if (!editando) setPaginaInventario(0);
-      setIntentoCarga((intento) => intento + 1);
-      cargarFormulario();
-    } catch (error) {
-      mostrarError(error, 'No se pudo procesar la propiedad');
-    } finally {
-      setGenerando(false);
-    }
-  };
 
   const publicar = async (prop: Propiedad, material: MaterialRevisado) => {
     setPublicando(true);
@@ -296,7 +153,7 @@ export function Inventario({
       type="button"
       onClick={cerrarSesion}
       disabled={saliendo}
-      className="text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 px-3 py-2 rounded-lg cursor-pointer"
+      className="text-sm bg-[var(--admin-soft)] hover:bg-[var(--admin-border)] disabled:opacity-50 px-3 py-2 rounded-lg cursor-pointer"
     >
       {saliendo ? 'Cerrando sesión…' : 'Cerrar sesión'}
     </button>
@@ -304,16 +161,16 @@ export function Inventario({
 
   if (accesoDenegado || propiedades === null) {
     return (
-      <main className="admin-shell min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-4 p-4">
+      <main className="admin-shell min-h-screen bg-[var(--admin-canvas)] text-[var(--admin-ink)] flex flex-col items-center justify-center gap-4 p-4">
         {errorOperacion ? (
-          <p role="alert" className="text-sm text-red-300">{errorOperacion}</p>
+          <p role="alert" className="text-sm text-[var(--admin-danger)]">{errorOperacion}</p>
         ) : (
           <p role="status">Comprobando acceso al inventario…</p>
         )}
         {errorOperacion && !accesoDenegado && (
           <button
             type="button"
-            className="text-sm bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-lg cursor-pointer"
+            className="text-sm bg-[var(--admin-soft)] hover:bg-[var(--admin-border)] px-3 py-2 rounded-lg cursor-pointer"
             onClick={() => {
               setErrorOperacion('');
               setIntentoCarga((intento) => intento + 1);
@@ -323,13 +180,13 @@ export function Inventario({
           </button>
         )}
         {botonCerrarSesion}
-        {errorSesion && <p role="alert" className="text-sm text-red-300">{errorSesion}</p>}
+        {errorSesion && <p role="alert" className="text-sm text-[var(--admin-danger)]">{errorSesion}</p>}
       </main>
     );
   }
 
   return (
-    <main className="admin-shell min-h-screen bg-zinc-950 text-zinc-100 p-4 md:p-8">
+    <main className="admin-shell min-h-screen bg-[var(--admin-canvas)] text-[var(--admin-ink)] p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-5 md:space-y-7">
         <header className="admin-header flex flex-wrap items-center justify-between gap-5 p-5 md:p-7">
           <div>
@@ -345,7 +202,7 @@ export function Inventario({
             <a
               href="/"
               target="_blank"
-              className="text-sm bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-lg flex items-center gap-1.5"
+              className="text-sm bg-[var(--admin-soft)] hover:bg-[var(--admin-border)] px-3 py-2 rounded-lg flex items-center gap-1.5"
             >
               Ver Catálogo Público <ExternalLink size={14} />
             </a>
@@ -354,7 +211,7 @@ export function Inventario({
         </header>
 
         {(errorSesion || errorOperacion) && (
-          <p role="alert" className="text-sm text-red-300">{errorSesion || errorOperacion}</p>
+          <p role="alert" className="text-sm text-[var(--admin-danger)]">{errorSesion || errorOperacion}</p>
         )}
 
         <nav className="admin-nav" aria-label="Secciones del panel">
@@ -366,7 +223,7 @@ export function Inventario({
         </nav>
 
         <div id="aviso-admin" data-admin-seccion>
-          <AvisoWhatsApp key={revisionAviso} ahora={ahora} />
+          <AvisoWhatsApp revision={revisionAviso} ahora={ahora} />
         </div>
 
         <div id="vip-admin" data-admin-seccion>
@@ -378,235 +235,21 @@ export function Inventario({
             solicitar(userId, `/api/admin/casas-ofrecidas?pagina=${pagina}`, opciones)} />
         </div>
 
-        {/* Formulario de Ingesta */}
-        <form
-          id="formulario-ficha" data-admin-seccion
-          onSubmit={procesarPropiedad}
-          className="inventario-ficha space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5"
-        >
-          <h2 className="font-semibold text-amber-400 flex items-center gap-2">
-            <Sparkles size={18} /> {editando ? 'Editar borrador' : 'Nueva propiedad'}
-          </h2>
-
-          <div className="space-y-2">
-            <label htmlFor="bloque-datos" className="block text-sm font-medium">
-              Pegar datos de la propiedad
-            </label>
-            <textarea
-              id="bloque-datos"
-              rows={10}
-              value={bloqueDatos}
-              onChange={(event) => {
-                setBloqueDatos(event.target.value);
-                setResultadoPegado(null);
-              }}
-              placeholder={'7824 W Pierson St, Phoenix, AZ 85033\nPICTURES\nhttps://drive.google.com/drive/folders/...\nPrice: $295,000\nARV: $395,000+\nBeds: 4\nBaths: 2'}
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm"
-            />
-            <p className="text-sm text-zinc-400">Pega un mensaje por propiedad. Reconoce dirección, ciudad, ZIP, carpeta y datos numéricos; conserva los detalles adicionales en notas privadas.</p>
-            <button
-              type="button"
-              onClick={aplicarDatosPegados}
-              disabled={!bloqueDatos.trim() || generando}
-              className="rounded-lg bg-zinc-800 px-3 py-2 text-sm font-medium disabled:opacity-50"
-            >
-              Rellenar campos vacíos
-            </button>
-            {resultadoPegado && (
-              <div role="status" className="space-y-1 text-sm text-zinc-300">
-                <p>{resultadoPegado.reconocidos.length
-                  ? `Reconocidos: ${resultadoPegado.reconocidos.map((campo) => camposPegables[campo][0]).join(', ')}.`
-                  : 'No se reconocieron valores. Usa una etiqueta y un valor por línea o completa el formulario.'}</p>
-                {camposFaltantes.length > 0 && (
-                  <p>Sin completar: {camposFaltantes.map((campo) => camposPegables[campo][0]).join(', ')}.</p>
-                )}
-                {resultadoPegado.revisar.length > 0 && (
-                  <p>Revisa los valores incompletos o ambiguos de {resultadoPegado.revisar.map((campo) => camposPegables[campo][0]).join(', ')}.</p>
-                )}
-                {resultadoPegado.conservados.length > 0 && (
-                  <p>Se conservaron los valores del formulario para {resultadoPegado.conservados.map((campo) => camposPegables[campo][0]).join(', ')}.</p>
-                )}
-                {resultadoPegado.arvConMas && <p>El ARV del bloque llevaba «+». Revisa el importe antes de guardar.</p>}
-                {resultadoPegado.advertencias.map((aviso) => <p key={aviso}>{aviso}</p>)}
-                <p>Corrige los datos abajo. Puedes guardar el borrador aunque falten campos.</p>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input
-              type="text"
-              aria-label="Dirección exacta"
-              placeholder="Dirección exacta (PRIVADA - Ej: 4512 W McDowell Rd)"
-              value={direccionPrivada}
-              onChange={(e) => setDireccionPrivada(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-            <div className="grid items-start gap-3 sm:grid-cols-2">
-              <SelectorCiudad value={ciudad} onChange={(valor) => {
-                setCiudad(valor);
-                setZonaOriginal(unirUbicacion(valor, zip));
-              }} />
-              <label className="grid gap-1 text-sm">ZIP público
-                <input className="vip-input" inputMode="numeric" maxLength={5} value={zip}
-                  onChange={(e) => {
-                    const nuevoZip = e.target.value.replace(/\D/g, '').slice(0, 5);
-                    setZip(nuevoZip);
-                    setZonaOriginal(unirUbicacion(ciudad, nuevoZip));
-                  }} />
-              </label>
-              {ciudadZona && !ciudad && <p className="text-sm sm:col-span-2">Revisa la ubicación reconocida: {ciudadZona}. Selecciona su ciudad antes de publicar.</p>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <input
-              type="number"
-              step="0.01"
-              aria-label="Precio"
-              placeholder="Precio ($ USD)"
-              value={precio}
-              onChange={(e) => setPrecio(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-            <input
-              type="number"
-              step="0.01"
-              aria-label="ARV"
-              placeholder="ARV ($ opcional)"
-              value={arv}
-              onChange={(e) => setArv(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-            <input
-              type="number"
-              aria-label="Recámaras"
-              placeholder="Recámaras (Beds)"
-              value={beds}
-              onChange={(e) => setBeds(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-            <input
-              type="number"
-              step="any"
-              aria-label="Baños"
-              placeholder="Baños (Baths)"
-              value={baths}
-              onChange={(e) => setBaths(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <input
-              type="number"
-              aria-label="Sqft"
-              placeholder="Sqft"
-              value={sqft}
-              onChange={(e) => setSqft(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-            <input
-              type="text"
-              aria-label="Lot Size"
-              placeholder="Lot Size (Ej: 6,500 sqft)"
-              value={lotSize}
-              onChange={(e) => setLotSize(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-            <input
-              type="number"
-              aria-label="Año construcción"
-              placeholder="Año construcción"
-              value={yearBuilt}
-              onChange={(e) => setYearBuilt(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input
-              type="url"
-              aria-label="Link de Google Drive"
-              placeholder="Link de Google Drive (fotos/videos)"
-              value={driveUrl}
-              onChange={(e) => {
-                const enlace = e.target.value;
-                if (enlace.trim() !== driveUrl.trim()) {
-                  setFotosDrive([]);
-                  setPortadaDrive(null);
-                }
-                setDriveUrl(enlace);
-              }}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-            <input
-              type="url"
-              aria-label="URL de portada alternativa"
-              placeholder="URL de portada alternativa"
-              disabled={portadaDrive !== null}
-              value={imagenPortada}
-              onChange={(e) => setImagenPortada(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-
-          {driveUrl.trim() && (
-            <SelectorFotosDrive
-              key={`${editando ?? 'nueva'}:${driveUrl.trim()}`}
-              carpeta={driveUrl.trim()}
-              nombrePropiedad={direccionPrivada.trim() || ciudadZona}
-              seleccionadas={fotosDrive}
-              portada={portadaDrive}
-              alSeleccionar={(fotos) => {
-                setFotosDrive(fotos);
-                if (!fotos.some(({ id }) => id === portadaDrive)) setPortadaDrive(null);
-              }}
-              alElegirPortada={(foto) => {
-                setPortadaDrive(foto.id);
-                setImagenPortada('');
-                setFotosDrive((seleccion) => seleccion.some(({ id }) => id === foto.id)
-                  ? seleccion : [...seleccion, foto]);
-              }}
-              listar={listarFotos}
-              abrir={abrirFoto}
-              abrirOriginal={abrirOriginal}
-            />
-          )}
-
-          <textarea
-            rows={2}
-            aria-label="Notas extra o condiciones"
-            placeholder="Notas privadas del mensaje: ocupación, acceso, reparaciones, enganche por confirmar…"
-            value={notasExtra}
-            onChange={(e) => setNotasExtra(e.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-          />
-
-          <p className="text-sm text-zinc-400">Estas notas son privadas y no confirman automáticamente características ni condiciones para los anuncios.</p>
-
-          <button
-            type="submit"
-            disabled={generando}
-            className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 transition cursor-pointer"
-          >
-            <Sparkles size={18} />
-            {generando ? 'Guardando…' : 'Guardar borrador'}
-          </button>
-          {editando && (
-            <button type="button" onClick={() => cargarFormulario()} disabled={generando}>
-              Cancelar edición
-            </button>
-          )}
-        </form>
+        <FormularioFicha key={formulario.revision} userId={userId} borrador={formulario.borrador}
+          drive={drive} cancelar={() => cargarFormulario()} limpiarError={() => setErrorOperacion('')}
+          mostrarError={mostrarError} alGuardar={(creado) => {
+            if (creado) setPaginaInventario(0);
+            setIntentoCarga((intento) => intento + 1);
+            setFormulario((actual) => actual === formulario ? { revision: actual.revision + 1 } : actual);
+          }} />
 
         {/* Lista de Propiedades y Scripts */}
         <section id="inventario-admin" data-admin-seccion className="space-y-4">
           <h2 className="editorial-title text-2xl">
             Inventario
           </h2>
-          <ColaDisponibilidad key={revisionAviso} cargar={cargarPendientes} actualizar={cambiarEstado}
-            ocupadas={cambiosDisponibilidad} ahora={ahora} />
+          <ColaDisponibilidad revision={revisionAviso} cargar={cargarPendientes} actualizar={cambiarEstado}
+            ocupadas={cambiosDisponibilidad} />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-lg font-semibold">Todas las fichas</h3>
             <button type="button" className="public-action" onClick={() => setIntentoCarga((n) => n + 1)}>Recargar inventario</button>
@@ -614,9 +257,9 @@ export function Inventario({
           {propiedades.length === 0 && <p>Todavía no hay fichas en el inventario.</p>}
 
           {propiedades.map((prop) => <FichaInventario key={prop.id} prop={prop} userId={userId} ahora={ahora}
-            editando={editando} revisandoFicha={revisando === prop.id} actualizando={cambiosDisponibilidad.has(prop.id)} publicando={publicando}
+            editando={formulario.borrador?.id ?? null} revisandoFicha={revisando === prop.id} actualizando={cambiosDisponibilidad.has(prop.id)} publicando={publicando}
             setRevisando={setRevisando} cargarFormulario={cargarFormulario} eliminarPropiedad={eliminarPropiedad}
-            cambiarEstado={cambiarEstado} publicar={publicar} abrirFoto={abrirFoto} abrirOriginal={abrirOriginal}
+            cambiarEstado={cambiarEstado} publicar={publicar} abrirFoto={drive.abrirFoto} abrirOriginal={drive.abrirOriginal}
             actualizarFicha={(id, cambios, actualizarAviso) => {
               setPropiedades((actuales) => actuales?.map((ficha) => ficha.id === id ? { ...ficha, ...cambios } : ficha) ?? null);
               if (actualizarAviso) setRevisionAviso((revision) => revision + 1);

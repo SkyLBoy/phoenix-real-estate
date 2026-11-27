@@ -56,8 +56,8 @@ export function CasasOfrecidas({ solicitar }: { solicitar: Solicitar }) {
       </header>
       {ocupado && <p role="status" className="text-sm">Procesando…</p>}
       {aviso && <p role="status" className="text-sm">{aviso}</p>}
-      {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-      {casas?.length === 0 && <p className="text-sm text-zinc-400">No hay casas ofrecidas en esta página.</p>}
+      {error && <p role="alert" className="text-sm text-[var(--admin-danger)]">{error}</p>}
+      {casas?.length === 0 && <p className="text-sm text-[var(--admin-secondary)]">No hay casas ofrecidas en esta página.</p>}
       {casas && casas.length > 0 && (
         <ul className="grid gap-3 md:grid-cols-2">
           {casas.map((casa) => {
@@ -68,7 +68,7 @@ export function CasasOfrecidas({ solicitar }: { solicitar: Solicitar }) {
                   <h3 className="break-words text-lg font-semibold">{casa.zona}</h3>
                   <span className="status-pill status-inactive">{estadosOferta[casa.estado]}</span>
                 </div>
-                <p className="text-sm text-zinc-400">{condicionesCasa[casa.condicion]}</p>
+                <p className="text-sm text-[var(--admin-secondary)]">{condicionesCasa[casa.condicion]}</p>
                 <p className="mt-2 font-semibold tabular-nums">
                   {casa.precio_esperado == null ? 'Precio sin definir' : `${importeUsd(casa.precio_esperado)} USD`}
                 </p>

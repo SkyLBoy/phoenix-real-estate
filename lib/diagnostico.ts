@@ -15,3 +15,7 @@ export function respuestaFallo(operacion: string, causa?: unknown, mensaje = 'No
     status, headers: { 'Cache-Control': 'no-store', 'X-Incidente': incidente },
   });
 }
+
+export function registrarAviso(operacion: string, codigo: string, detalles?: { modelo: string; estado?: number }) {
+  console.warn(JSON.stringify({ nivel: 'aviso', operacion, codigo, ...detalles }));
+}

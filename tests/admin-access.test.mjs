@@ -341,9 +341,10 @@ globalThis.fetch = async (input, init) => {
         }
         return new Response(null, { status: 204 });
       }
-      case 'DELETE':
-        properties.delete(url.searchParams.get('id').slice(3));
-        return new Response(null, { status: 204 });
+      case 'DELETE': {
+        const id = url.searchParams.get('id').slice(3);
+        return Response.json(properties.delete(id) ? [{ id }] : []);
+      }
     }
   }
 
@@ -482,6 +483,48 @@ test('el vendedor administra el inventario y el técnico puede consultarlo con s
   assert.equal(deleted.status, 200);
   const finalListing = await request(GET, 'GET', { token: seller });
   assert.deepEqual(await finalListing.json(), { propiedades: [property] });
+});
+
+test('crear y editar fichas rechaza JSON inválido y valores fuera del rango entero', async () => {
+  const id = 'borrador-validacion';
+  properties.set(id, { id, ficha_version: 0, publicada_en: null });
+  try {
+    const editar = (ficha) => request(PATCH, 'PATCH', {
+      token: seller, body: { id, ficha_version: 0, accion: 'guardar_borrador', ficha },
+    });
+    for (const invalido of [null, [], 'texto']) {
+      const alta = await request(POST, 'POST', { token: seller, body: invalido });
+      const cambio = await editar(invalido);
+      for (const respuesta of [alta, cambio]) {
+        assert.equal(respuesta.status, 400);
+        assert.match((await respuesta.json()).error, /como un objeto JSON/);
+      }
+    }
+    const roto = await POST(new Request('https://panel.test/api/procesar-propiedad', {
+      method: 'POST', headers: { Authorization: `Bearer ${seller}` }, body: '{',
+    }));
+    assert.equal(roto.status, 400);
+    for (const [ficha, campo] of [
+      [{ beds: 2.5 }, 'Recámaras'], [{ beds: '2147483648' }, 'Recámaras'],
+      [{ year_built: '1995.5' }, 'Año de construcción'], [{ year_built: 2101 }, 'Año de construcción'],
+    ]) {
+      const cambio = await editar(ficha);
+      assert.equal(cambio.status, 400);
+      assert.match((await cambio.json()).error, new RegExp(campo));
+    }
+    assert.equal((await editar({ beds: '3', year_built: '1995' })).status, 200);
+    assert.equal(properties.get(id).beds, 3);
+    assert.equal(properties.get(id).year_built, 1995);
+  } finally {
+    properties.delete(id);
+  }
+});
+
+test('eliminar una ficha requiere identificador y devuelve 404 si no existe', async () => {
+  for (const query of ['', '?id=%20']) {
+    assert.equal((await request(DELETE, 'DELETE', { token: seller, query })).status, 400);
+  }
+  assert.equal((await request(DELETE, 'DELETE', { token: seller, query: '?id=ficha-ya-eliminada' })).status, 404);
 });
 
 test('si falta la lista de acceso, la cuenta válida no obtiene acceso', async () => {
@@ -1265,6 +1308,9 @@ test('las plantillas usan el mismo público en ambos idiomas y solo los rasgos c
     assert.match(resultado.textos.script_fb_en, /comparing deals/i);
     assert.match(resultado.textos.script_fb_en, /new roof/i);
     assert.doesNotMatch(JSON.stringify(resultado.textos), /piscina|Pool|270,000/i);
+    const conPrecioMercado = await generarTextos(datosAnuncio(ficha, { incluirArv: true }));
+    assert.match(conPrecioMercado.textos.script_fb_es, /Precio del Mercado: \$270,000/);
+    assert.match(conPrecioMercado.textos.script_fb_en, /Market Price: \$270,000/);
     const individual = await generarTextos(datosAnuncio(ficha, { publico: 'vivienda' }), 'script_fb_en');
     assert.deepEqual(Object.keys(individual.textos), ['script_fb_en']);
     assert.match(individual.textos.script_fb_en, /call home/i);
@@ -1349,12 +1395,18 @@ test('la galería usa copias revisadas, revalida ETag y deja de servirlas al ret
   driveSinAcceso=true;
   try {
     const listado = await (await galeria(new Request('https://panel.test'),context)).json();
-    assert.equal(listado.fotos.length,1);
+    const rutaPortada = `/api/propiedades/${id}/portada`;
+    assert.deepEqual(listado, { portada: rutaPortada, fotos: [rutaPortada] });
     assert.doesNotMatch(JSON.stringify(listado),/google|Sala|clave-foto|foto-1/);
     const fotoContext = {params:Promise.resolve({id,foto:copia.id})};
-    const respuesta = await foto(new Request('https://panel.test'),fotoContext);
+    const antesDeCargar = serviceCalls.length;
+    const respuesta = await PORTADA(new Request(`https://panel.test${rutaPortada}`), context);
     assert.equal(respuesta.status,200);
+    assert.equal(serviceCalls.slice(antesDeCargar).filter((p) => p === '/rest/v1/material_publico').length, 1);
     const tag = respuesta.headers.get('etag');
+    const actualizada = await PORTADA(new Request(`https://panel.test${rutaPortada}`, { headers: { 'If-None-Match': '"anterior"' } }), context);
+    assert.equal(actualizada.status, 200);
+    assert.equal(actualizada.headers.get('etag'), tag);
     const antes = serviceCalls.length;
     assert.equal((await foto(new Request('https://panel.test',{headers:{'If-None-Match':tag}}),fotoContext)).status,304);
     assert.equal(serviceCalls.slice(antes).filter((p) => p==='/rest/v1/material_publico').length,1);

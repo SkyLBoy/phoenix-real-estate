@@ -7,7 +7,9 @@ export async function GET(_request: Request, context: RouteContext<'/api/propied
     .eq('id', id).not('publicada_en', 'is', null).eq('estado', 'disponible').maybeSingle();
   if (error && error.code !== '22P02') return respuestaFallo('galeria.listar', error);
   if (!data) return new Response(null, { status: 404 });
-  const enlace = (foto: string) => `/api/propiedades/${encodeURIComponent(id)}/fotos/${encodeURIComponent(foto)}`;
-  return Response.json({ portada: data.portada_publica_id && data.galeria_publica_ids.includes(data.portada_publica_id) ? enlace(data.portada_publica_id) : null, fotos: (data.galeria_publica_ids as string[]).map((foto) =>
-    `/api/propiedades/${encodeURIComponent(id)}/fotos/${encodeURIComponent(foto)}`) }, { headers: { 'Cache-Control': 'no-store' } });
+  const base = `/api/propiedades/${encodeURIComponent(id)}`;
+  const ids = (data.galeria_publica_ids ?? []) as string[];
+  const portada = ids.includes(data.portada_publica_id) ? `${base}/portada` : null;
+  const fotos = ids.map((foto) => foto === data.portada_publica_id ? `${base}/portada` : `${base}/fotos/${encodeURIComponent(foto)}`);
+  return Response.json({ portada, fotos }, { headers: { 'Cache-Control': 'no-store' } });
 }

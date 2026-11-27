@@ -65,7 +65,7 @@ function texto(nodo) {
 }
 
 test('el formulario conserva ciudad al escribir, borrar y corregir ZIP y al cambiar de ciudad', () => {
-  const render = pantalla('app/admin/inventario.tsx', 'Inventario', { userId: 'vendedor' }, true);
+  const render = pantalla('app/admin/formulario-ficha.tsx', 'FormularioFicha', { userId: 'vendedor', drive: {} });
   const ciudad = () => nodos(render()).find((n) => typeof n.type === 'function' && typeof n.props?.onChange === 'function' && 'value' in n.props);
   const zip = () => nodos(render()).find((n) => n.type === 'input' && n.props.inputMode === 'numeric');
   ciudad().props.onChange('Peoria');
@@ -100,6 +100,38 @@ test('una ficha aprobada pierde la copia de anuncios al retirarse y ofrece una r
     assert.match(respuesta.props.value, estado === 'en_contrato' ? /en contrato/ : /ya no está disponible/);
   }
   assert.equal(boton(editor(render({ estado: 'disponible' }))).props.disabled, false);
+});
+
+test('los cambios de revisión conservan la página visible de la cola', () => {
+  const ficha = { id: 'casa-2', ciudad_zona: 'Mesa', direccion_privada: null, ultima_confirmacion: null };
+  const render = pantalla('app/admin/cola-disponibilidad.tsx', 'ColaDisponibilidad', {
+    revision: 0, ocupadas: new Set(), cargar: async () => ({ propiedades: [], hayMas: false }), actualizar: async () => {},
+  }, false, [1, 0, { propiedades: [ficha], hayMas: true }]);
+  for (const revision of [0, 1]) {
+    const arbol = render({ revision });
+    const indicador = nodos(arbol).find((n) => n.type === 'span' && texto(n).startsWith('Página '));
+    assert.deepEqual(indicador.props.children, ['Página ', 2]);
+    assert.match(texto(arbol), /Mesa/);
+    assert.equal(nodos(arbol).find((n) => n.type === 'button' && texto(n) === 'Anterior').props.disabled, false);
+  }
+});
+
+test('los textos conservan el enganche local al corregir el precio y lo sincronizan al cambiar en el servidor', () => {
+  const ficha = { textos_version: 1, condiciones_texto: { enganche: 10 }, script_fb_es: 'Casa disponible', script_fb_es_aprobado: true };
+  const render = pantalla('app/admin/textos-ficha.tsx', 'TextosDeFicha', {
+    ficha, estado: 'disponible', zona: 'Peoria', requisitos: [], guardar: async () => ({}),
+  });
+  const enganche = (arbol) => nodos(arbol).find((n) => n.type === 'input' && n.props.type === 'number');
+  assert.equal(enganche(render()).props.value, '10');
+  enganche(render()).props.onChange({ target: { value: '15' } });
+  assert.equal(enganche(render({ ficha: { ...ficha, textos_version: 2, script_fb_es_aprobado: false } })).props.value, '15');
+
+  const actualizada = { ...ficha, textos_version: 3, condiciones_texto: { enganche: 20 } };
+  render({ ficha: actualizada });
+  const arbol = render({ ficha: actualizada });
+  assert.equal(enganche(arbol).props.value, '20');
+  const editor = nodos(arbol).find((n) => n.props?.canal === 'script_fb_es');
+  assert.equal(editor.props.condicionesEditadas, false);
 });
 
 test('las vistas de Drive reintentan con la alternativa y después con la descarga privada', () => {

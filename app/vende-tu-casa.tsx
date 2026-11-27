@@ -45,7 +45,7 @@ export function VendeTuCasa() {
         </div>
         {enviada ? (
           <p role="status" className="self-start rounded-lg bg-emerald-50 p-4 text-emerald-900">
-            He recibió tu propiedad para revisión. Si necesito más información, te escribire al WhatsApp que compartiste.
+            Recibí tu propiedad para revisión. Si necesito más información, te escribiré al WhatsApp que compartiste.
           </p>
         ) : (
           <form onSubmit={enviar} className="space-y-3">

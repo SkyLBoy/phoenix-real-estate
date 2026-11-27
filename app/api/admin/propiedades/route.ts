@@ -5,7 +5,7 @@ import type { FotoDrive } from '../../../../lib/fotos-drive';
 import { esZonaPublica } from '../../../../lib/zona-publica';
 import { separarUbicacion } from '../../../../lib/ciudades-phoenix';
 import { ErrorDrive, fotoParaPanel, identificadorDrive } from '../../drive';
-import { camposFicha, camposInventario, urlPublica } from './campos';
+import { camposFicha, camposInventario, esObjeto, urlPublica } from './campos';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../../admin-access';
 
 export async function GET(req: Request) {
@@ -50,8 +50,9 @@ export async function PATCH(req: Request) {
   const denied = await rejectUnauthorizedAdmin(req);
   if (denied) return denied;
 
-  const body = await req.json().catch(() => null);
-  const id = body?.id;
+  const body: unknown = await req.json().catch(() => null);
+  if (!esObjeto(body)) return NextResponse.json({ error: 'Envía los datos de la ficha como un objeto JSON' }, { status: 400 });
+  const id = body.id;
   if ((typeof id !== 'string' && typeof id !== 'number') || !id) {
     return NextResponse.json({ error: 'Identifica la ficha' }, { status: 400 });
   }
@@ -76,7 +77,7 @@ export async function PATCH(req: Request) {
   }
 
   if (body.accion === 'guardar_borrador' || body.accion === 'publicar' || body.accion === 'actualizar_material') {
-    if (!Number.isSafeInteger(body.ficha_version) || body.ficha_version < 0) {
+    if (typeof body.ficha_version !== 'number' || !Number.isSafeInteger(body.ficha_version) || body.ficha_version < 0) {
       return NextResponse.json({ error: 'Recarga la ficha para obtener su versión.' }, { status: 400 });
     }
     let cambios;
@@ -126,6 +127,7 @@ export async function PATCH(req: Request) {
           portada_publica_id, galeria_publica_ids: [...new Set(galeria_publica_ids)],
         };
       } else {
+        if (!esObjeto(body.ficha)) throw new Error('Envía los datos del borrador como un objeto JSON');
         const { data: anterior, error } = await supabaseAdmin.from('propiedades')
           .select('drive_url,fotos_drive').eq('id', id).eq('ficha_version', body.ficha_version).is('publicada_en', null).maybeSingle();
         if (error) return respuestaFallo('borrador.consultar', error);
@@ -182,16 +184,18 @@ export async function DELETE(req: Request) {
   if (denied) return denied;
 
   const { searchParams } = new URL(req.url);
-  const id = searchParams.get('id');
+  const id = searchParams.get('id')?.trim();
+  if (!id) return NextResponse.json({ error: 'Identifica la ficha' }, { status: 400 });
 
-  const { error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('propiedades')
     .delete()
-    .eq('id', id);
+    .eq('id', id)
+    .select('id').maybeSingle();
 
-  if (error) {
-    return respuestaFallo('propiedades.escribir', error);
-  }
+  if (error?.code === '22P02') return NextResponse.json({ error: 'Identificador de ficha inválido' }, { status: 400 });
+  if (error) return respuestaFallo('propiedades.escribir', error);
+  if (!data) return NextResponse.json({ error: 'La ficha ya no existe' }, { status: 404 });
 
   return NextResponse.json({ ok: true });
 }

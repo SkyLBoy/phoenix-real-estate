@@ -46,9 +46,9 @@ export function DescargarSeleccionDrive({ fotos, abrirOriginal, nombrePropiedad 
         <button type="button" disabled={progreso > 0} onClick={() => descargar('original')}
           className="public-action min-h-11">Descargar originales ({fotos.length}) en ZIP</button>
       </div>
-      <p className="text-sm text-zinc-400">Las vistas previas son copias de lo que Drive permite visualizar. Pueden tener baja resolución; no son los originales. Su tamaño no se aumenta.</p>
+      <p className="text-sm text-[var(--admin-secondary)]">Las vistas previas son copias de lo que Drive permite visualizar. Pueden tener baja resolución; no son los originales. Su tamaño no se aumenta.</p>
       {progreso > 0 && <p role="status">Preparando ZIP · {progreso}/{fotos.length}</p>}
-      {error && <p role="alert" className="text-red-300">{error}</p>}
+      {error && <p role="alert" className="text-[var(--admin-danger)]">{error}</p>}
     </div>
   );
 }
@@ -89,8 +89,8 @@ export function VistaFotoDrive({ foto, abrir, alCargar, miniatura = false }: {
     if (foto.resourceKey) enlace.searchParams.set('resourcekey', foto.resourceKey);
     return (
       <div className="space-y-1">
-        <p role="alert" className="text-red-300">{error.mensaje}</p>
-        <a href={enlace.href} target="_blank" rel="noopener noreferrer" className="text-amber-300">Abrir archivo en Drive</a>
+        <p role="alert" className="text-[var(--admin-danger)]">{error.mensaje}</p>
+        <a href={enlace.href} target="_blank" rel="noopener noreferrer" className="text-[var(--admin-link)]">Abrir archivo en Drive</a>
       </div>
     );
   }
@@ -111,7 +111,7 @@ export function VistaFotoDrive({ foto, abrir, alCargar, miniatura = false }: {
   if (miniatura) return imagenVisible;
   return <figure className="space-y-2">
     {imagenVisible}
-    <figcaption className="break-all text-sm text-zinc-300">{foto.name}</figcaption>
+    <figcaption className="break-all text-sm text-[var(--admin-body)]">{foto.name}</figcaption>
   </figure>;
 }
 
@@ -135,7 +135,7 @@ export function DescargarFotoDrive({ foto, abrir }: { foto: FotoDrive; abrir: Ab
   if (foto.descargaUrl) {
     return (
       <a href={foto.descargaUrl} target="_blank" rel="noopener noreferrer"
-        aria-label={`Descargar ${foto.name}`} className="text-amber-300">
+        aria-label={`Descargar ${foto.name}`} className="text-[var(--admin-link)]">
         Descargar
       </a>
     );
@@ -145,10 +145,10 @@ export function DescargarFotoDrive({ foto, abrir }: { foto: FotoDrive; abrir: Ab
     <span>
       <button type="button" onClick={descargar} disabled={descargando}
         aria-label={`Descargar ${foto.name}`}
-        className="text-amber-300 disabled:text-zinc-500">
+        className="text-[var(--admin-link)] disabled:text-[var(--admin-muted)]">
         {descargando ? 'Descargando…' : 'Descargar'}
       </button>
-      {error && <span role="alert" className="block text-red-300">{error}</span>}
+      {error && <span role="alert" className="block text-[var(--admin-danger)]">{error}</span>}
     </span>
   );
 }
@@ -196,17 +196,17 @@ export function SelectorFotosDrive({
   const fotoVista = visibles.find((foto) => foto.id === vista);
 
   return (
-    <section className="space-y-3 rounded-lg border border-zinc-800 p-3 text-sm" aria-label="Fotos de Google Drive">
+    <section className="space-y-3 rounded-lg border border-[var(--admin-soft)] p-3 text-sm" aria-label="Fotos de Google Drive">
       <button type="button" onClick={cargar} disabled={cargando}
-        className="rounded-lg bg-zinc-800 px-3 py-2 font-medium disabled:opacity-50">
+        className="rounded-lg bg-[var(--admin-soft)] px-3 py-2 font-medium disabled:opacity-50">
         {cargando ? 'Cargando fotos…' : 'Ver fotos de la carpeta'}
       </button>
-      <p className="text-zinc-400">Revisa las fotos y elige cuáles usar. Antes de publicar, revisa que las copias públicas oculten la dirección exacta.</p>
+      <p className="text-[var(--admin-secondary)]">Revisa las fotos y elige cuáles usar. Antes de publicar, revisa que las copias públicas oculten la dirección exacta.</p>
       {seleccionadas.length > 0 && <DescargarSeleccionDrive fotos={seleccionadas} abrirOriginal={abrirOriginal} nombrePropiedad={nombrePropiedad} />}
-      {error && <p role="alert" className="text-red-300">{error}</p>}
+      {error && <p role="alert" className="text-[var(--admin-danger)]">{error}</p>}
       {fotos?.length === 0 && <p>No hay fotos compatibles para descargar en esta carpeta.</p>}
       {fotos && seleccionadas.some((foto) => !fotos.some((disponible) => disponible.id === foto.id)) && (
-        <div className="space-y-1 text-amber-300">
+        <div className="space-y-1 text-[var(--admin-link)]">
           <p>Hay fotos elegidas que ya no están en la carpeta.</p>
           <button type="button" className="underline"
             onClick={() => alSeleccionar(seleccionadas.filter((foto) => fotos.some(({ id }) => id === foto.id)))}>
@@ -215,9 +215,9 @@ export function SelectorFotosDrive({
         </div>
       )}
       {fotoVista && (
-        <div id={idVista} className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+        <div id={idVista} className="space-y-3 rounded-xl border border-[var(--admin-soft)] bg-[var(--admin-canvas)] p-3">
           <div className="flex justify-end">
-            <button type="button" onClick={() => setVista(null)} className="text-amber-300">Cerrar vista</button>
+            <button type="button" onClick={() => setVista(null)} className="text-[var(--admin-link)]">Cerrar vista</button>
           </div>
           <VistaFotoDrive key={fotoVista.id} foto={fotoVista} abrir={abrir} />
         </div>
@@ -227,12 +227,12 @@ export function SelectorFotosDrive({
           {visibles.map((foto) => {
             const elegida = seleccionadas.some(({ id }) => id === foto.id);
             return (
-              <li key={foto.id} className={`min-w-0 overflow-hidden rounded-xl border bg-zinc-950 ${elegida ? 'border-amber-500' : 'border-zinc-800'}`}>
+              <li key={foto.id} className={`min-w-0 overflow-hidden rounded-xl border bg-[var(--admin-canvas)] ${elegida ? 'border-[var(--admin-primary)]' : 'border-[var(--admin-soft)]'}`}>
                 <button type="button" onClick={() => {
                   setVista(foto.id);
                   requestAnimationFrame(() => document.getElementById(idVista)?.scrollIntoView({ block: 'nearest' }));
                 }} aria-label={`Ampliar ${foto.name}`}
-                  className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-zinc-800">
+                  className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-[var(--admin-soft)]">
                   <VistaFotoDrive key={foto.id} foto={foto} abrir={abrir} miniatura />
                 </button>
                 <div className="space-y-2 p-3">
@@ -244,7 +244,7 @@ export function SelectorFotosDrive({
                   </label>
                   <div className="flex flex-wrap gap-x-3 gap-y-1">
                     <button type="button" onClick={() => alElegirPortada(foto)} disabled={portada === foto.id}
-                      aria-label={`Usar ${foto.name} como portada`} className="text-amber-300 disabled:text-zinc-400">
+                      aria-label={`Usar ${foto.name} como portada`} className="text-[var(--admin-link)] disabled:text-[var(--admin-secondary)]">
                       {portada === foto.id ? 'Portada elegida' : 'Usar de portada'}
                     </button>
                     {elegida && <DescargarFotoDrive foto={foto} abrir={abrir} />}

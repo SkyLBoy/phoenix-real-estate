@@ -12,23 +12,27 @@ export async function servirMaterial(request: Request, propiedad: string, archiv
   if (archivo && !((ficha.galeria_publica_ids ?? []) as string[]).includes(archivo)) return new Response(null, { status: 404 });
   let bytes: Buffer;
   let hash: string;
+  const etagCliente = request.headers.get('if-none-match');
   if (id) {
-    const { data: meta, error: fallo } = await supabaseAdmin.from('material_publico').select('contenido_hash')
+    if (etagCliente) {
+      const { data: meta, error: fallo } = await supabaseAdmin.from('material_publico').select('contenido_hash')
+        .eq('id', id).eq('propiedad_id', propiedad).maybeSingle();
+      if (fallo) return respuestaFallo('material.metadatos', fallo);
+      if (!meta?.contenido_hash) return new Response(null, { status: 404 });
+      const headers = { ETag: `"${meta.contenido_hash}"`, 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' };
+      if (etagCliente === headers.ETag) return new Response(null, { status: 304, headers });
+    }
+    const { data, error: lectura } = await supabaseAdmin.from('material_publico').select('contenido,contenido_hash')
       .eq('id', id).eq('propiedad_id', propiedad).maybeSingle();
-    if (fallo) return respuestaFallo('material.metadatos', fallo);
-    if (!meta?.contenido_hash) return new Response(null, { status: 404 });
-    hash = meta.contenido_hash;
-    const headers = { ETag: `"${hash}"`, 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' };
-    if (request.headers.get('if-none-match') === headers.ETag) return new Response(null, { status: 304, headers });
-    const { data, error: lectura } = await supabaseAdmin.from('material_publico').select('contenido').eq('id', id).maybeSingle();
     if (lectura) return respuestaFallo('material.leer_publico', lectura);
-    if (!data?.contenido) return new Response(null, { status: 404 });
+    if (!data?.contenido || !data.contenido_hash) return new Response(null, { status: 404 });
     bytes = Buffer.from(data.contenido.slice(2), 'hex');
+    hash = data.contenido_hash;
   } else {
     // Compatibilidad con copias de portada anteriores. Las visitas nunca consultan Drive.
     if (!ficha.portada_legacy_hash) return new Response(null, { status: 404 });
     const headers = { ETag: `"${ficha.portada_legacy_hash}"`, 'Cache-Control': 'private, no-cache' };
-    if (request.headers.get('if-none-match') === headers.ETag) return new Response(null, { status: 304, headers });
+    if (etagCliente === headers.ETag) return new Response(null, { status: 304, headers });
     const { data: antigua, error: lectura } = await supabaseAdmin.from('propiedades').select('portada_webp').eq('id', propiedad)
       .not('publicada_en', 'is', null).eq('estado', 'disponible').maybeSingle();
     if (lectura) return respuestaFallo('material.leer_legacy', lectura);
@@ -37,6 +41,6 @@ export async function servirMaterial(request: Request, propiedad: string, archiv
     hash = createHash('md5').update(bytes).digest('hex');
   }
   const headers = { 'Content-Type': 'image/webp', ETag: `"${hash}"`, 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' };
-  if (request.headers.get('if-none-match') === headers.ETag) return new Response(null, { status: 304, headers });
+  if (etagCliente === headers.ETag) return new Response(null, { status: 304, headers });
   return new Response(new Uint8Array(bytes), { headers });
 }

@@ -60,7 +60,7 @@ export default function AdminPanel() {
 
   if (session === undefined) {
     return (
-      <main className="admin-shell min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center" role="status">
+      <main className="admin-shell min-h-screen bg-[var(--admin-canvas)] text-[var(--admin-ink)] grid place-items-center" role="status">
         Comprobando sesión…
       </main>
     );
@@ -79,15 +79,15 @@ export default function AdminPanel() {
   }
 
   return (
-    <main className="admin-shell min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-4">
+    <main className="admin-shell min-h-screen bg-[var(--admin-canvas)] text-[var(--admin-ink)] flex items-center justify-center p-4">
       <form
         onSubmit={iniciarSesion}
-        className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full space-y-4 sm:p-8"
+        className="bg-[var(--admin-surface)] border border-[var(--admin-soft)] p-6 rounded-2xl max-w-md w-full space-y-4 sm:p-8"
       >
-        <h1 className="flex items-center gap-2 text-amber-400 font-bold text-lg">
+        <h1 className="flex items-center gap-2 text-[var(--admin-accent)] font-bold text-lg">
           <Lock size={20} /> Acceso privado
         </h1>
-        <div className="flex items-center gap-3"><LogoMarca /><p className="text-sm font-medium text-zinc-400">Sergio Orantes | House FixAndFlip</p></div>
+        <div className="flex items-center gap-3"><LogoMarca /><p className="text-sm font-medium text-[var(--admin-secondary)]">Sergio Orantes | House FixAndFlip</p></div>
         <label className="block space-y-1">
           <span className="text-sm">Correo electrónico</span>
           <input
@@ -96,7 +96,7 @@ export default function AdminPanel() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100 focus:outline-none focus:border-amber-400"
+            className="w-full bg-[var(--admin-canvas)] border border-[var(--admin-soft)] rounded-lg px-3 py-2.5 text-[var(--admin-ink)] focus:outline-none focus:border-[var(--admin-accent)]"
           />
         </label>
         <label className="block space-y-1">
@@ -107,14 +107,14 @@ export default function AdminPanel() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             required
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100 focus:outline-none focus:border-amber-400"
+            className="w-full bg-[var(--admin-canvas)] border border-[var(--admin-soft)] rounded-lg px-3 py-2.5 text-[var(--admin-ink)] focus:outline-none focus:border-[var(--admin-accent)]"
           />
         </label>
-        {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+        {error && <p role="alert" className="text-sm text-[var(--admin-danger)]">{error}</p>}
         <button
           type="submit"
           disabled={entrando}
-          className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-semibold py-2.5 rounded-lg transition cursor-pointer"
+          className="w-full bg-[var(--admin-primary)] hover:bg-[var(--admin-accent)] disabled:opacity-50 text-[var(--admin-canvas)] font-semibold py-2.5 rounded-lg transition cursor-pointer"
         >
           {entrando ? 'Iniciando sesión…' : 'Entrar al panel'}
         </button>

@@ -65,7 +65,7 @@ export function RevisionMaterial({ ficha, userId, publicar, ocupado }: {
     finally { setPreparando(false); }
   };
 
-  return <section className="space-y-3 rounded-xl border border-zinc-700 p-3" aria-label="Revisión de fotos públicas">
+  return <section className="space-y-3 rounded-xl border border-[var(--admin-border)] p-3" aria-label="Revisión de fotos públicas">
     <p>Ubicación pública: <strong>{ficha.ciudad_zona}</strong></p>
     <p>Elige hasta 12 fotos. Revisa las copias y comprueba que oculten el domicilio antes de publicarlas.</p>
     <fieldset disabled={ocupado || preparando} className="space-y-2">

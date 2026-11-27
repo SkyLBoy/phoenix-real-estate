@@ -1,4 +1,5 @@
 import type { FotoDrive } from '@/lib/fotos-drive';
+import { limitesEnterosFicha } from '../../../../lib/propiedad-admin';
 import { identificadorDrive, listarFotosDrive } from '../../drive';
 
 // La copia WebP solo se lee al servir una portada individual.
@@ -18,6 +19,19 @@ function numero(value: unknown) {
   const result = Number(value);
   if (!Number.isFinite(result) || result < 0) throw new Error('Hay campos numéricos inválidos');
   return result;
+}
+
+export function esObjeto(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function entero(value: unknown, campo: string, { min, max }: { min: number; max: number }) {
+  const valor = typeof value === 'string' && value.trim() ? Number(value) : value;
+  if (valor == null || (typeof valor === 'string' && !valor.trim())) return null;
+  if (typeof valor !== 'number' || !Number.isSafeInteger(valor) || valor < min || valor > max) {
+    throw new Error(`${campo} debe ser un entero entre ${min} y ${max}`);
+  }
+  return valor;
 }
 
 export function urlPublica(value: unknown) {
@@ -57,11 +71,11 @@ export async function camposFicha(body: Record<string, unknown>, anterior?: { dr
     ciudad_zona: texto(body.ciudad_zona),
     precio: numero(body.precio),
     arv: numero(body.arv),
-    beds: numero(body.beds),
+    beds: entero(body.beds, 'Recámaras', limitesEnterosFicha.recamaras),
     baths: numero(body.baths),
     sqft: numero(body.sqft),
     lot_size: texto(body.lot_size),
-    year_built: numero(body.year_built),
+    year_built: entero(body.year_built, 'Año de construcción', limitesEnterosFicha.anioConstruccion),
     drive_url: driveUrl,
     fotos_drive: fotos,
     portada_drive_id: portada,

@@ -2,6 +2,11 @@ import type { FotoDrivePanel as FotoDrive } from './fotos-drive';
 import type { EstadoDisponibilidad } from './disponibilidad';
 import type { TextosFicha } from './textos-propiedad';
 
+export const limitesEnterosFicha = {
+  recamaras: { min: 0, max: 2_147_483_647 },
+  anioConstruccion: { min: 1800, max: 2100 },
+} as const;
+
 export interface Propiedad extends TextosFicha {
   ficha_version: number;
   id: string;

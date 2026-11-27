@@ -2,7 +2,7 @@ import { respuestaFallo } from '../../../lib/diagnostico';
 import { NextResponse } from 'next/server';
 import { rejectUnauthorizedAdmin, supabaseAdmin } from '../admin-access';
 import { ErrorDrive } from '../drive';
-import { camposFicha } from '../admin/propiedades/campos';
+import { camposFicha, esObjeto } from '../admin/propiedades/campos';
 import { datosAnuncio, generarTextos } from '../admin/textos/generador';
 import { canalesTexto } from '../../../lib/textos-propiedad';
 
@@ -11,7 +11,8 @@ export async function POST(req: Request) {
     const denied = await rejectUnauthorizedAdmin(req);
     if (denied) return denied;
 
-    const body = await req.json();
+    const body: unknown = await req.json().catch(() => null);
+    if (!esObjeto(body)) return NextResponse.json({ error: 'Envía los datos de la ficha como un objeto JSON' }, { status: 400 });
     let ficha;
     try {
       ficha = await camposFicha(body);

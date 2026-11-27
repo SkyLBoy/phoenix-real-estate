@@ -14,13 +14,13 @@ export type PaginaPendientes = { propiedades: FichaPendiente[]; hayMas: boolean 
 const fechaPhoenix = new Intl.DateTimeFormat('es-MX', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Phoenix',
 });
-const boton = 'min-h-11 rounded-lg bg-zinc-800 px-3 text-sm disabled:opacity-50';
+const boton = 'min-h-11 rounded-lg bg-[var(--admin-soft)] px-3 text-sm disabled:opacity-50';
 
-export function ColaDisponibilidad({ cargar, actualizar, ocupadas, ahora }: {
+export function ColaDisponibilidad({ cargar, actualizar, ocupadas, revision }: {
   cargar: (pagina: number, signal: AbortSignal) => Promise<PaginaPendientes>;
   actualizar: (id: string, estado: EstadoDisponibilidad) => Promise<void>;
   ocupadas: Set<string>;
-  ahora: number | null;
+  revision: number;
 }) {
   const [pagina, setPagina] = useState(0);
   const [reintento, setReintento] = useState(0);
@@ -30,6 +30,11 @@ export function ColaDisponibilidad({ cargar, actualizar, ocupadas, ahora }: {
     const controller = new AbortController();
     cargar(pagina, controller.signal).then((datos) => {
       if (!controller.signal.aborted) {
+        if (pagina > 0 && !datos.propiedades.length) {
+          setResultado(null);
+          setPagina(pagina - 1);
+          return;
+        }
         setResultado(datos);
         setError('');
       }
@@ -37,7 +42,7 @@ export function ColaDisponibilidad({ cargar, actualizar, ocupadas, ahora }: {
       if (!controller.signal.aborted) setError(fallo instanceof Error ? fallo.message : 'No se pudieron cargar las fichas pendientes.');
     });
     return () => controller.abort();
-  }, [cargar, pagina, reintento, ahora]);
+  }, [cargar, pagina, reintento, revision]);
 
   function irA(nueva: number) {
     setResultado(null);

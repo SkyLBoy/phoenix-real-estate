@@ -4,7 +4,7 @@ export const camposPegables = {
   direccionPrivada: ['Dirección exacta', 'dirección privada', 'dirección', 'property address', 'address'],
   ciudadZona: ['Zona pública', 'ciudad/zona', 'ciudad', 'zona', 'city'],
   precio: ['Precio', 'price', 'asking price', 'precio usd', 'price usd'],
-  arv: ['ARV', 'ARV estimado', 'estimated ARV', 'after repair value'],
+  arv: ['Precio del Mercado', 'Market Price', 'ARV', 'ARV estimado', 'estimated ARV', 'after repair value'],
   beds: ['Recámaras', 'habitaciones', 'dormitorios', 'bed', 'beds', 'bedrooms'],
   baths: ['Baños', 'bath', 'baths', 'bathrooms'],
   sqft: ['Superficie', 'sq ft', 'sqft', 'living area', 'square feet', 'superficie habitable'],

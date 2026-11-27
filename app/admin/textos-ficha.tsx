@@ -37,10 +37,10 @@ function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, disponible
   };
 
   return (
-    <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+    <div className="space-y-2 rounded-lg border border-[var(--admin-soft)] bg-[var(--admin-canvas)] p-3">
       <label className="block space-y-2">
         <span className="block font-medium">{textosPropiedad[canal]}</span>
-        <span className="block text-xs text-zinc-400">
+        <span className="block text-xs text-[var(--admin-secondary)]">
           {cambio ? 'Cambios sin guardar' : aprobado ? 'Aprobado' : texto ? 'Pendiente de aprobación' : 'Sin texto'}
         </span>
         <textarea value={borrador} rows={9} maxLength={MAX_TEXTO} disabled={ocupado}
@@ -48,9 +48,9 @@ function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, disponible
             setBorrador(event.target.value);
             setAvisoCopia('');
           }}
-          className="w-full rounded border border-zinc-800 bg-zinc-900 p-2" />
+          className="w-full rounded border border-[var(--admin-soft)] bg-[var(--admin-surface)] p-2" />
       </label>
-      <div className="flex flex-wrap gap-3 text-sm [&>button]:text-amber-300 [&>button:disabled]:text-zinc-500">
+      <div className="flex flex-wrap gap-3 text-sm [&>button]:text-[var(--admin-link)] [&>button:disabled]:text-[var(--admin-muted)]">
         <button type="button" disabled={ocupado || !puedeGenerar}
           aria-label={`${texto ? 'Regenerar' : 'Generar'} ${textosPropiedad[canal]}`} onClick={() => generar(canal, cambio)}>
           {texto ? 'Regenerar este texto' : 'Generar este texto'}
@@ -62,7 +62,7 @@ function EditorTexto({ canal, texto, aprobado, ocupado, puedeGenerar, disponible
         <button type="button" disabled={!disponible || ocupado || condicionesEditadas || cambio || !aprobado || !texto}
           onClick={copiar}>Copiar texto final</button>
       </div>
-      {avisoCopia && <p role="status" className="text-xs text-zinc-300">{avisoCopia}</p>}
+      {avisoCopia && <p role="status" className="text-xs text-[var(--admin-body)]">{avisoCopia}</p>}
     </div>
   );
 }
@@ -80,15 +80,22 @@ export function TextosDeFicha({ ficha, estado, zona, requisitos, editarBorrador,
     ? `La propiedad en ${zona} está en contrato. ¿Quieres que busquemos otra opción en esa zona?`
     : `La propiedad en ${zona} ya no está disponible. ¿Quieres que busquemos otra opción en esa zona?`;
   const [avisoAlternativa, setAvisoAlternativa] = useState('');
-  const [condiciones, setCondiciones] = useState(ficha.condiciones_texto ?? {});
+  const condicionesServidor = ficha.condiciones_texto ?? {};
+  const [condicionesBase, setCondicionesBase] = useState(condicionesServidor);
+  const [condiciones, setCondiciones] = useState(condicionesServidor);
   const [enganche, setEnganche] = useState(String(condiciones.enganche ?? ''));
+  if (!mismasCondiciones(condicionesBase, condicionesServidor)) {
+    setCondicionesBase(condicionesServidor);
+    setCondiciones(condicionesServidor);
+    setEnganche(String(condicionesServidor.enganche ?? ''));
+  }
   const [ocupado, setOcupado] = useState(false);
   const [mensaje, setMensaje] = useState('');
   const [fallo, setFallo] = useState('');
   const [generaciones, setGeneraciones] = useState<Partial<Record<CanalTexto, number>>>({});
   const paraGenerar = { ...condiciones, enganche: enganche.trim() ? Number(enganche) : undefined };
   const puedeGenerar = requisitos.length === 0 && (!enganche || (Number(enganche) > 0 && Number(enganche) <= 100));
-  const condicionesEditadas = !mismasCondiciones(paraGenerar, ficha.condiciones_texto ?? {});
+  const condicionesEditadas = !mismasCondiciones(paraGenerar, condicionesServidor);
 
   const enviar = async (peticion: PeticionTexto) => {
     setOcupado(true);
@@ -126,7 +133,7 @@ export function TextosDeFicha({ ficha, estado, zona, requisitos, editarBorrador,
 
   return (
     <details className="space-y-3 text-sm">
-      <summary className="cursor-pointer text-amber-300">Textos de la propiedad</summary>
+      <summary className="cursor-pointer text-[var(--admin-link)]">Textos de la propiedad</summary>
       <fieldset disabled={ocupado} className="space-y-3">
         <legend className="font-medium">Condiciones confirmadas para esta ficha</legend>
         <div className="flex flex-wrap gap-3">
@@ -141,7 +148,7 @@ export function TextosDeFicha({ ficha, estado, zona, requisitos, editarBorrador,
             Enganche (%)
             <input type="number" min="0.01" max="100" step="0.01" value={enganche}
               onChange={(event) => setEnganche(event.target.value)}
-              className="w-20 rounded border border-zinc-800 bg-zinc-950 p-1" />
+              className="w-20 rounded border border-[var(--admin-soft)] bg-[var(--admin-canvas)] p-1" />
           </label>
         </div>
         <label className="grid gap-1">
@@ -169,16 +176,16 @@ export function TextosDeFicha({ ficha, estado, zona, requisitos, editarBorrador,
             ))}
           </div>
         </fieldset>
-        {condicionesEditadas && <p className="text-zinc-300">Genera un borrador para guardar los cambios. Los textos aprobados volverán a revisión.</p>}
+        {condicionesEditadas && <p className="text-[var(--admin-body)]">Genera un borrador para guardar los cambios. Los textos aprobados volverán a revisión.</p>}
         <button type="button" disabled={!puedeGenerar}
-          onClick={() => generar()} className="rounded bg-zinc-800 px-3 py-2 text-amber-300 disabled:opacity-50">
+          onClick={() => generar()} className="rounded bg-[var(--admin-soft)] px-3 py-2 text-[var(--admin-link)] disabled:opacity-50">
           {ocupado ? 'Procesando…' : 'Generar cuatro textos'}
         </button>
       </fieldset>
-      {!disponible && <div className="space-y-2 rounded-lg border border-zinc-700 p-3">
+      {!disponible && <div className="space-y-2 rounded-lg border border-[var(--admin-border)] p-3">
         <p>La ficha está fuera del inventario disponible. Puedes responder al interesado con este mensaje.</p>
         <textarea aria-label="Respuesta sobre la propiedad retirada" readOnly rows={3} value={respuestaAlternativa}
-          className="w-full rounded border border-zinc-700 bg-zinc-950 p-2" />
+          className="w-full rounded border border-[var(--admin-border)] bg-[var(--admin-canvas)] p-2" />
         <button type="button" className="public-action" onClick={async () => {
           try {
             await navigator.clipboard.writeText(respuestaAlternativa);
@@ -190,15 +197,15 @@ export function TextosDeFicha({ ficha, estado, zona, requisitos, editarBorrador,
         {avisoAlternativa && <p role="status">{avisoAlternativa}</p>}
       </div>}
       {requisitos.length > 0 && (
-        <div className="space-y-2 text-zinc-300">
+        <div className="space-y-2 text-[var(--admin-body)]">
           <ul className="list-inside list-disc">
             {requisitos.map((requisito) => <li key={requisito}>{requisito}</li>)}
           </ul>
-          {editarBorrador && <a href="#formulario-ficha" onClick={editarBorrador} className="text-amber-300">Completar borrador</a>}
+          {editarBorrador && <a href="#formulario-ficha" onClick={editarBorrador} className="text-[var(--admin-link)]">Completar borrador</a>}
         </div>
       )}
-      {mensaje && <p role="status" className="text-zinc-300">{mensaje}</p>}
-      {fallo && <p role="alert" className="text-red-300">{fallo}</p>}
+      {mensaje && <p role="status" className="text-[var(--admin-body)]">{mensaje}</p>}
+      {fallo && <p role="alert" className="text-[var(--admin-danger)]">{fallo}</p>}
       <div className="grid gap-4 xl:grid-cols-2">
         {canalesTexto.map((canal) => (
           <EditorTexto key={JSON.stringify([canal, ficha[canal], generaciones[canal]])}

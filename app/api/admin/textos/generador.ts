@@ -1,3 +1,4 @@
+import { registrarAviso } from '../../../../lib/diagnostico';
 import { ApiError, GoogleGenAI, Type } from '@google/genai';
 import {
   canalesTexto, clavesCondiciones, clavesRasgos, MAX_TEXTO, publicosTexto, rasgosPublicos, requisitosTextos,
@@ -101,7 +102,7 @@ function plantillas(datos: DatosAnuncio): Record<CanalTexto, string> {
     c.arreglos && 'Repair financing available',
     c.enganche && `Down payment: ${c.enganche}%`,
   ].filter(Boolean).map((condicion) => `✅ ${condicion}`).join('\n');
-  const arv = datos.arv ? `ARV: ${usd(datos.arv)}` : '';
+  const precioMercado = datos.arv ? usd(datos.arv) : '';
   const unir = (...lineas: string[]) => lineas.filter(Boolean).join('\n');
   const ganchos = {
     vivienda: [`🏡 ¿Buscas casa para vivir en ${datos.zona}?`, `🏡 Looking for a place to call home in ${datos.zona}?`],
@@ -115,14 +116,14 @@ function plantillas(datos: DatosAnuncio): Record<CanalTexto, string> {
   return {
     script_fb_es: secciones(
       unir(aperturaEs, destacadosEs && `✨ ${destacadosEs}`),
-      unir(`Price: ${precio}`, arv, specs), es,
+      unir(`Price: ${precio}`, precioMercado && `Precio del Mercado: ${precioMercado}`, specs), es,
       c.paraFlippers && datos.publico !== 'vivienda' ? '🔨 Pregúntame por esta opción para Fix & Flip.' : '',
       c.asesoria ? '💡 Te acompaño durante el proceso de compra.' : '',
       '📲 Escríbeme para ver fotos y coordinar una visita.',
     ),
     script_fb_en: secciones(
       unir(aperturaEn, destacadosEn && `✨ ${destacadosEn}`),
-      unir(`Asking price: ${precio}`, arv, specs), en,
+      unir(`Asking price: ${precio}`, precioMercado && `Market Price: ${precioMercado}`, specs), en,
       c.paraFlippers && datos.publico !== 'vivienda' ? '🔨 Ask me about this fix-and-flip option.' : '',
       c.asesoria ? '💡 I can guide you through the buying process.' : '',
       '📲 Message me for photos and to schedule a walkthrough.',
@@ -145,15 +146,15 @@ function incluyeAfirmacionesSinRespaldo(texto: string) {
 export async function generarTextos(datos: DatosAnuncio, canal?: CanalTexto) {
   const solicitados = canal ? [canal] : canalesTexto;
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) console.warn('[Textos Gemini] Falta configurar GEMINI_API_KEY.');
+  if (!apiKey) registrarAviso('textos.gemini', 'SIN_API_KEY');
   if (apiKey) {
     const ai = new GoogleGenAI({ apiKey });
     const prompt = `Eres el asistente editorial de un vendedor de casas en Phoenix. Escribe como una persona que conoce su inventario y le habla directamente al comprador.
-Para Facebook, escribe con el ritmo de un vendedor que publica para su comunidad: una primera línea con 🏡 y un gancho de una o dos frases; un bloque de datos, uno por línea (Price, ARV si existe, Beds, Baths, Sq Ft, Lot Size y Year Built según estén disponibles); un bloque de condiciones con ✅, una por línea; y un cierre con 📲 para pedir fotos o agendar visita. Usa primera persona y frases cortas. No escribas todo en un párrafo ni uses mayúsculas sostenidas.
+Para Facebook, escribe con el ritmo de un vendedor que publica para su comunidad: una primera línea con 🏡 y un gancho de una o dos frases; un bloque de datos, uno por línea (Price, Precio del Mercado en español o Market Price en inglés si está disponible, Beds, Baths, Sq Ft, Lot Size y Year Built según estén disponibles); un bloque de condiciones con ✅, una por línea; y un cierre con 📲 para pedir fotos o agendar visita. Usa primera persona y frases cortas. No escribas todo en un párrafo ni uses mayúsculas sostenidas.
 Referencia de VOZ, no de datos: «🏡 ¡Te tengo una casa en [zona]! ¿Estás buscando dónde hacer tu primer Fix & Flip?» Solo usa el ángulo Fix & Flip si está confirmado para esa ficha. Otro cierre de referencia: «📲 Mándame mensaje y te paso las fotos. ¿En qué parte de Phoenix estás buscando?». Adapta la apertura a cada casa y evita repetir el ejemplo de forma literal.
 Elige para cada canal el dato confirmado más relevante. Abre con ese dato, una pregunta concreta o dos cifras útiles. Evita ganchos genéricos como «gran oportunidad» y «no dejes pasar». Alterna entre pregunta y afirmación según el dato; evita que las cuatro piezas comiencen igual.
 
-El público seleccionado en «publico» es el mismo en ambos idiomas. Para vivienda destaca un rasgo confirmado que el comprador pueda imaginar al visitar. Para inversión presenta cifras confirmadas, con el ARV como estimación si está disponible. Para un público mixto combina una característica física y el precio. Usa «rasgos» como detalles confirmados para distinguir la publicación. Evita inferir utilidad, reparaciones o rentabilidad.
+El público seleccionado en «publico» es el mismo en ambos idiomas. Para vivienda destaca un rasgo confirmado que el comprador pueda imaginar al visitar. Para inversión presenta cifras confirmadas, con el Precio del Mercado como estimación si está disponible. El campo «arv» del JSON se presenta como «Precio del Mercado» en español y «Market Price» en inglés. Para un público mixto combina una característica física y el precio. Usa «rasgos» como detalles confirmados para distinguir la publicación. Evita inferir utilidad, reparaciones o rentabilidad.
 - script_fb_es: anuncio en español con apertura personal, bloque escaneable de cifras y una invitación a pedir fotos o coordinar visita.
 - script_fb_en: anuncio en inglés natural con una apertura propia, datos escaneables y una invitación a conversar.
 - script_wa_vip: mensaje individual breve, de dos o tres líneas. Incluye zona y precio, a lo sumo un dato adicional y una invitación a responder.
@@ -195,17 +196,16 @@ Datos públicos: ${JSON.stringify(datos)}`;
         });
         if (borradores.every(([, texto]) => texto && texto.length <= MAX_TEXTO)) {
           if (borradores.some(([, texto]) => incluyeAfirmacionesSinRespaldo(texto))) {
-            console.warn(`[Textos Gemini] ${modelo}: se descartaron afirmaciones sin respaldo en la ficha.`);
+            registrarAviso('textos.gemini', 'AFIRMACIONES_SIN_RESPALDO', { modelo });
             continue;
           }
           return { textos: Object.fromEntries(borradores), origen: 'gemini' as const };
         }
-        console.warn(`[Textos Gemini] ${modelo}: respuesta incompleta o fuera del límite de texto.`);
+        registrarAviso('textos.gemini', 'RESPUESTA_INVALIDA', { modelo });
       } catch (error) {
-        const motivo = error instanceof ApiError ? `HTTP ${error.status}`
-          : error instanceof SyntaxError ? 'JSON inválido'
-          : error instanceof Error ? error.name : 'error desconocido';
-        console.warn(`[Textos Gemini] ${modelo}: ${motivo}.`);
+        const codigo = error instanceof ApiError ? 'ERROR_HTTP'
+          : error instanceof SyntaxError ? 'JSON_INVALIDO' : 'ERROR_INESPERADO';
+        registrarAviso('textos.gemini', codigo, { modelo, estado: error instanceof ApiError ? error.status : undefined });
       }
     }
   }

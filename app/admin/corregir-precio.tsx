@@ -28,7 +28,7 @@ export function CorregirPrecio({ precio, guardar }: {
 
   return (
     <details className="space-y-2 text-sm">
-      <summary className="cursor-pointer text-amber-300">Corregir precio</summary>
+      <summary className="cursor-pointer text-[var(--admin-link)]">Corregir precio</summary>
       <form onSubmit={enviar} className="flex flex-wrap items-end gap-3">
         <label className="space-y-1">
           <span className="block">Nuevo precio en USD</span>
@@ -37,15 +37,15 @@ export function CorregirPrecio({ precio, guardar }: {
               setImporte(event.target.value);
               setMensaje('');
             }}
-            className="min-h-11 w-36 rounded-lg border border-zinc-700 bg-zinc-950 px-3" />
+            className="min-h-11 w-36 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-canvas)] px-3" />
         </label>
         <button type="submit" disabled={guardando || !importe || Number(importe) === precio}
-          className="min-h-11 rounded-lg bg-zinc-800 px-3 text-amber-300 disabled:opacity-50">
+          className="min-h-11 rounded-lg bg-[var(--admin-soft)] px-3 text-[var(--admin-link)] disabled:opacity-50">
           {guardando ? 'Guardando…' : 'Guardar precio'}
         </button>
       </form>
-      {mensaje && <p role="status" className="text-zinc-300">{mensaje}</p>}
-      {error && <p role="alert" className="text-red-300">{error}</p>}
+      {mensaje && <p role="status" className="text-[var(--admin-body)]">{mensaje}</p>}
+      {error && <p role="alert" className="text-[var(--admin-danger)]">{error}</p>}
     </details>
   );
 }
